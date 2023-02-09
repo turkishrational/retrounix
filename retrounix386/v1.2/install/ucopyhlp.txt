@@ -1,0 +1,60 @@
+UNIXCOPY.COM (how to use) by Erdogan Tan
+
+Assembling:
+
+masm unixcopy.asm
+link /t unixcopy
+
+= 26/01/2020 ===
+
+Working Directory: RUNIX2
+1.44MB Floppy Disk Image: FD0.IMG
+Bootfile: BOOT5.BIN (dos), boot (runix)
+Kernel: RUNIX2.BIN (dos), unix (runix)
+
+All files must be in working (dos) directory...
+(Accept it as RUNIX2, here)
+
+*** 
+
+Start UNIXCOPY program with FD image by using..
+C:\RUNIX2> unixcopy -i fd0.img
+
+(or you can directly use 1.44MB flopy drive -A: or B:- by using 
+C:\RUNIX2> unixcopy fd0 .. unixcopy fd1, unixcopy a:, unixcopy b:)
+
+then..
+
+use '?' command for command help. (in UNIXCOPY)
+
+ls -l . ; list root dir contents..
+
+***
+
+At first, copy boot file to root directory..
+(its name must be 'boot')
+
+fromdos boot5.bin boot
+
+..then set 'boot' file as startup file (as boot file)
+
+bootfile boot
+
+..then.. copy runix (v2) kernel file as unix (in root directory)
+
+fromdos runix2.bin unix
+
+...
+
+(Other files are copied from dos as above 'fromdos' command samples..)
+
+'chdir' command may be used to change runix working directory..
+
+For example: chdir bin
+
+Other UNIXCOPY commands: dir, ls, todos, rm, mkdir, rmdir, link, exit,
+show, inode, chmod, chown, chgrp, namei, fs, volume, nobootfile, help.
+
+...
+
+Finally, this fd image is ready to test, Retro UNIX 386 v2 OS project works.

@@ -1,5 +1,9 @@
-You can assemble Retro UNIX 386 v1.1
-source code by using NASM (v2.11)...
+UNIXFDFS.COM (how to use) by Erdogan Tan
+
+= 26/01/2020 ===
+
+You can assemble Retro UNIX 386 v2
+source code by using NASM (v2.14)...
 
 ((unix386.s is the main source file, 
 includes other source files
@@ -9,8 +13,8 @@ Example:
 nasm unix386.s -l unix386.txt -o unix
 
 (For above example, all of Retro UNIX 386
-v1.1 kernel --".s" & ".inc"-- source
-files must be in the nasm program directory...
+v2 kernel --".s"-- source files must be
+in the nasm program directory...
 But, you can use another directory or
 you can copy files between nasm directory
 and your working directory; for axample, 

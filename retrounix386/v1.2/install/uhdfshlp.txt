@@ -1,0 +1,70 @@
+UNIXHDFS.COM (how to use) by Erdogan Tan
+
+= 26/01/2020 ===
+
+You can assemble Retro UNIX 386 v2
+source code by using NASM (v2.14)...
+
+((unix386.s is the main source file, 
+includes other source files
+via %include directive))
+
+Example:
+nasm unix386.s -l unix386.txt -o unix
+
+(For above example, all of Retro UNIX 386
+v2 kernel --".s"-- source files must be
+in the nasm program directory...
+But, you can use another directory or
+you can copy files between nasm directory
+and your working directory; for axample, 
+you can use 'runix' directory as working dir.)
+
+(Read NASM manual for details...)
+
+******
+
+Then you can copy 'unix' binary/kernel to
+root directory of the Retro UNIX 386 FS
+floppy disk...
+
+by using 'UNIXHDCP.COM' program
+
+Example:
+fromdos c:\nasm\unix /unix
+
+******
+
+In order to install RUNIX (Retro UNIX)
+386 v2 file system on a hard disk image:
+(HD0.IMG is a sample hd image file name)
+
+Create HD0.IMG file by using HDIMAGE.COM
+Create Runix v2 (71h) partition by using HDIMAGE.COM
+(Follow partition creating menu after selecting disk geometry.) 
+
+sample disk geometry
+--------------------
+Cylinders: 400
+Heads:      16
+Sectors:    17
+
+('sectors' may be 63.. max. runix v2 partition size may be upto 512MB. 
+Image file size may be up to 1GB.. And dos and runix partition
+may be created on it by using HDIMAGE.COM)
+
+Note: To use 2GB hd image is possible but runix partition creating
+on it gives error.. 
+Also, >512MB runix partitions gives error with UNIXHDCP.COM.
+(for current versions of HDIMAGE.COM, UNIXHDFS.COM, UNIXHDCP.COM progs.)
+
+****
+
+Then, format RUNIX (71h) partition by using UNIXHDFS.COM program.
+
+****
+
+NOTE: It is possible to use a real hard disk if a RUNIX v2 (71h) partition
+is already created on it. UNIXHDFS.COM can format 71h (RUNIX v2) partition
+and UNIXHDCP.COM can be used to copy boot, kernel and program files 
+to the RUNIX v2 file system on hard disk.  
