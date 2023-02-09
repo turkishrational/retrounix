@@ -1,0 +1,94 @@
+Retro UNIX 386 v2 için kernel programlama/geliþtirme notlarý...
+(Erdoðan Tan).. Tarih sýrasýna göre günlük taslak notlar.
+------------------------------------------------------------------------------
+(Yapýlmýþ ve yapýlacak iþlemleri/deðiþiklikleri açýklamak ve hatýrlamak için.)
+
+benioku.txt'den devam..
+(O dosyanýn sonunda Retro UNIX v1.2, Kernel v0.2.2.0 tamamlanmýþ oldu)
+
+..burada yazdýklarým Retro UNIX v1.2, Kernel v0.2.2.1'in geliþtirme notlarý.
+
+09/05/2022'de....
+
+1) u2.'s'de sysexec'de argument listi (ecore+pagesize) olan sanal bellek sonundan
+4 byte geri çektim (lodsd ve dword move konutlarýndan) argument list sonuna doðru
+genel protection fault -v1.1'de mount programýný denerken karþýlaþtým- 
+oluþmamasý için önlem aldým. (örnek: stack'tan argument count çekilir ve
+son argument pointerden sonra son argument -asciiz string- lodsb yerine
+lodsd ile alýnýrsa bellek sonuna denk gelen argument sonunda gpf oluþabiliyor.
+Yaptýðým deðiþiklik bu olasýlýðý engellemek için.
+
+2) u2.s'de sysstat sadece inode number ve inode structure döndürüyordu.
+'pwd' ve 'cp' gibi programlarda mounted device number gerektiði için,
+en uygun ve eskiyle (önceki programlarla) uyumlu yöntem olarak inode'un
+aygýt/disk numarasýný eax'de döndürecek ekleme yaptým. Root ise 0, 
+mounted ise 1 dönüyor. (1 olmak zorunda deðil ama [idev] veya [cdev] içindeki sayý
+doðrudan disk numrasý deðil; 0 ise root dev olduðunu ve disk numarasýnýn [rdev] de
+olduðunu, 1 ise mounted dev olduðunu ve disk numarasýnýn [mdev] de olduðunu gösteriyor.
+Orijinal unix v1 yöntemi böyle. Retro UNIX de sadece disk numaralarý farklý.).
+
+3) diskinit.s içindeki 'set_disk_parms' prosedüründe deðiþiklik yaptým.
+Artýk 1 silindiri ayýrmadan ne kadar silindir varsa, disk kapasitesi
+cylinders*spt*heads olarak doðru hesaplanýyor. (Eski haliyle son silindir
+hesaba katýlmýyordu ve drv.size'a eksik sector count kayýtlanýyordu.)
+Düzeltme monte edilen (mounted device) dosya sisteminin (sysmount içinde)
+geçerlilik kontrolü iþlemi olarak, free map byte count ile disk size
+kýyaslamasýnda doðru sonuç almak için gerekti. Örneðin: 360 byte olan
+fd0 süperbloku free map byte sayýsý (offset 0'daki word) 360*8 = 2880
+sektöre karþýlýk geliyor ama 80*18*2 olmasý gerekirken, 79*18*2 hesaplanan
+disk.size free map bit size ile karþýlaþtýrýldýðýnda geçersiz
+süperblok (içeriði) sonucuna yol açýyordu. Bunu düzelttim.   	
+
+4) sysmount içinde [rdev] içndeki disk numarasýnýn ait olduðu diskin
+mount yapýlmasýný önleyen (yani root diskinin kendi alt dizinine mount edilmesini
+önleyen) deðiþiklik yaptým. /dev/fd0 device numarasý 0 olduðu için, boþ
+anlamýndaki [mdev] = 0 ile çakýþýyordu. /dev/fd0 için umount yapýlýrken
+mount durumu olmadýðý halde, [mdev] içindeki disk numarasý 0 ile /dev/fd0
+numrasý eþit olduðundan umount baþarýlýymýþ görünüyordu. Önce [mnti] içinde
+mounting directory numarasýnýn olmasý þartýný kontrol ettirerek bunu önledim.
+Çünkü mounted device yok ise [mnti] = 0 oluyor. Aksi takdirde sýfýr olmuyor.
+
+15/05/2022'de....
+
+1) u2.s'de 'namei' içinde 'pwd' komutuna göre '..' parent directory linkin
+   (mounted device durumu var ise) doðru çalýþmasý için	ekleme yaptým ([cdev]=1
+   ve [ii]=1 olursa ve '..' istenmiþ ise, mounting directory'in parent dir
+   ('sysmount' onu [mntp] içine kayýtlýyor) inode numarasý döndürülüyor.
+   ((bu ekleme/deðiþiklik 'pwd' komutu path çýktýsýnýn doðru olmasýný saðlýyor.)
+   Tabii ki mounted device içine dosya yazma yaparken path'in doðru olmasýný da
+   saðlamýþ oluyor. Geriye doðru gidiþte '..' kullanýldýðýndan , deðiiklik doðru
+   oldu.))
+2) u7.s'de 'sysmount' için [mntp] alanýna mounting dir'nin parent dir'sinin
+   kayýtlanmasý deðiþikliðini yaptým. [mntp] içinde kayýtlý inode numarasýný
+   'namei' kullanýyor (yukarýda açýkladým). Ayrýca 'sysumount' dosya sisteminin
+   bir dizinine monte edilmiþ aygýtý device dosya adý doðru yazýlmýþsa demonte
+   (dismount) ediyor. Bu esnada, eðer kullanýcý ([u.cdir]) demonte olan dizinde
+   ise ([u.cdrv]=1), [u.cdir] shell'in çalýþtýrdýðý child prosese ait olduðundan,
+   /etc/umount'tan dönüþte parent prosesin -shell'in kullanýcýya ait kopyesinin-
+   doðru dizine yerleþmesi için (yani demonte olan device 1 dizinlerinden çýkýp
+   mounting directory'e kadar geri gidecek), parent prosesi 'p.ppid', 'p.pid'
+   arama/karþýlaþtýrmasý ile bulup, onun 'p.upage' deðerinden, upage'indeki
+   user structure'ýnda u.cdir ve u.cdrv deðerleri deðiþtiriliyor. 
+   [mnti]=0 olurken, sýrlamadan önceki mnti deðeri parent'in 'u.cdir' alanýna
+   kayýtlanýyor ve parentin 'u.cdrv' ralaý sýfýlanýyor (0 = root fs).
+   Bu iþlem umount'tan hemen sonra ('/etc/umount') root fs'deki mounting 
+   directory'inin asýl içeriðinin görülmesini saplýyor (ve yukarýda açýklanan
+   faydasý oluyor).
+3) ux.s'de [mntp] dword alaný açtým. (bss'te)..
+
+02/06/2022'de ....
+
+sysstime (set unix epoch time) sistem çaðrýsýnda, ayarlanacak epoch deðerini
+içeren ebx register'ýnýn set_date_time prosedüründe kullanýldýðý yerden önce
+temizlenmesi gerekirken, eski deðeriyle býrakýlmasý, hatalý tarih/saat kayýtý
+yapýlmasýna yol açýyordu. Bunu hatayý düzeltim ve set_date_time kodunda
+iyileþtirme yaptým.
+
+08/06/2022'de ....
+
+ux.s içinde 4 byte'lýk 'level:' alanýný 'resd 1' olmasý gerekirken 'resd 0'
+olarak yazmam nedeniyle (indirekt blok içeren 5120 byte ve üstü büyüklükte
+dosyalarý kopyelerken) u5.s'deki 'mget' içinde (bss kesimindeki 'level' alanýnýn
+dword olarak ayrýlmýþ olmamasý dolayýsýyla) 5120 byte ve üstü yeni dosyalarda
+yeni sektör/block oluþturma iþlemi kilitleniyordu (sonsuz döngüye giriyordu);
+bugün bunu farkedip düzelttim. 

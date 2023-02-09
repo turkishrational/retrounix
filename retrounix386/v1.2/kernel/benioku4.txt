@@ -1,0 +1,97 @@
+Retro UNIX 386 v2 için kernel programlama/geliþtirme notlarý...
+(Erdoðan Tan).. Tarih sýrasýna göre günlük taslak notlar.
+------------------------------------------------------------------------------
+(Yapýlmýþ ve yapýlacak iþlemleri/deðiþiklikleri açýklamak ve hatýrlamak için.)
+
+benioku3.txt'den devam..
+(O dosyanýn sonunda Retro UNIX v1.2, Kernel v0.2.2.2 tamamlanmýþ oldu)
+
+..burada yazdýklarým Retro UNIX v1.2, Kernel v0.2.2.3'in geliþtirme notlarý.
+
+12/07/2022'de ...
+
+*) Retro UNIX 386 v1.1'de IBM PC/AT (ve XT-286) ROM BIOS int13h disk
+   fonksiyonlarýný esas alan diskio proedürlerinde sadeleþtirme
+   yaptým. Retro UNIX'de kullanýlmayan fonksiyonlarý ve fazla kodlarý sildim.
+   (diskio.s, diskdata.inc ve diskbss.inc dosyalarýnda disket ve hard disk
+   için reset/read/write dýþýndaki fonsiyonlarýn silinmesiyle sadeleþtirme
+   ve kýsalma oldu ve disket prosedürlerinde bir adet bugfix oldu)
+   Bu deðiþiklikleri versiyon 1.1 ve versiyon 1.0'da denedim. Hatasýz olduðunu
+   doðrulayýnca versiyon 1.2'ye uyarladým.
+
+16/07/2022'de .. (15/07/2022 akþamý baþlayarak)
+
+*) u8.s'de karmaþýk ve orijinal unix v1'deki buffer handling kalýntýlarý
+   taþýyan buffer handling (arabellek kullaným) kodunu özgün/original basit
+   kodla deðiþtirdim. Buffer header'daki buffer status kýsmýnda bit 0 valid
+   buffer flag, bit 1 write/modified flag, bit 2 read flag diðerleri
+   kullanýlmýyor þeklinde basitleþti. Diske yazma veya okuma iþleminden önce
+   boþ buffer (bit 0 = 0) aranýyor, bulunuyorsa kayýtlanýyor, sektör zaten
+   bir buffer'da kullanýlmýþsa (status bit 0 = 1, device ve LBA ayný) o buffer
+   ile devam ediliyor. Free (invalid) yok ise, en eski kullanýlmýþ (en son
+   kullanýlan buffer daima buffer pointer listesinin baþýna alýnýyor) buffer
+   yeni sektöre atanýyor (status bit 0 = 0 yapýlarak, geçersizleþtiriyor).
+   'wslot' status bit 1'i 1 yapýyor; 'dskrd' status bit 2'yi 1 yapýyor ama
+   validation bit 0 olarak býrakýlýyor. Disk r/w iþlemi baþarýlý olursa,
+   'poke' validation flag'ýný yani status bit 0'i 1 diðer bitleri 0 yapýyor.
+   Böylece o bloklar/sektörler bufferlarda hazýr tutulmuþ oluyor.
+   (Okuma veya yazma hatasý olursa ilgili buffer geçersizleþtiriyor ki, 
+   diskteki içerik ile buffer'daki içerik farklý olmasýn. Kernelde mevcut
+   haliyle 16 adet buffer (16*520 byte) tanýmlý. u8.s'ye içine yeni buffer
+   yöntemi açýklamalarýný yazdým. ux.s'deki 1 byte'lýk 'active' alanýný
+   artýk (u8.s'de) kullanýlmadýðý için iptal ettim.		
+   		
+17/07/2022'de ...
+
+*) diskio.s, u0.s, u1.s, u5.s, memory.s ve unix386.s içinde gereksiz 16 bit
+   shift (shr, shl) kodlarýný 32 bite dönüþtürdüm (bazý gereksiz
+   66h prefixlerini kernel kodundan çýkarmak için) ve diskio.s içindeki
+   gereksiz 'xor ch, ch'yi iptal ettim.	
+
+18/07/2022'de ...
+
+*) diskio.s'de 'DMA_SETUP' da iyileþtirme yaptým (sadece 512 byte/sector
+   disketler tanýmlý olduðundan gereksiz kýsmý iptal edip, direkt 512 byte'a
+   göre kodu kýsalttým). u2.s'de 'maknod ve 'anyi' içinde 'wslot' la ilgili
+   gereksiz pusp-pop'larý iptal ettim (ebp artýk 'wslot' içinde deðiþmiyor).
+
+19/07/2022'de ...
+
+*) Orijinal unix v1 kernel kodu da dahil olamak üzere, u6.s'deki 'dskw'
+   prosedüründe ('sioreg' içinde file ofset artýrma dolayýsýyla) ve
+   u8.de'ki 'bwrite' prosedürlerinde ('dioreg' içinde file offset artýrma)
+   dolayýsýyla 'dskwr' deki diske yazma iþlemi error ile dönse (yazma
+   gerçekleþmese dahi, file offset deðiþmiþ oluyordu. Oysa write (modified)
+   sector buffer geçersiz hale geliyordu ve bir sonraki yazmada file offset
+   (veya disk block pointer) ayný adrese yeniden yazýlmasý gerekirken..
+   (file offset yazma hatasýnda dahi, 'dskwr'den önce gelen 'sioreg' ve
+   'dioreg' prosedürleri içinde ilerletildiði için), bir sonraki sektöre
+   veya ayný sektör içinde yanlýþ ofsete yazýlabiliyordu. Kullanýcý programý
+   disk yazma hatasýndan sonra ayný sektörü tekrar yazmayý deneyebilir
+   veya dosya pointer'ýný baþa almadan ve dosyayý silmeden devam edebilir.
+   Böyle durumlarda dosya ve disk içeriðinin (daha da) bozulmamasý için,
+   diske yazma ('syswrite') iþleminde, sadece disk sektörüne yazma baþarýyla
+   gerçekleþirse, file offset pointer (yazýlan byte sayýsý kadar) ilerleyecek
+   þekilde önemli düzeltmeler yaptým. u6.s'deki 'dskw' prosedüründe,
+   'sioreg' prosedüründe ve 'sioreg' deðiþtiði için 'dskr' prosedüründe
+   u8.s'deki 'bwrite' ve dioreg' prosedürlerinde  ve 'dioreg' deðiþtiði için
+   'bread' prosedüründe deðiþiklik yaptým.
+
+24/07/2022'de ...
+
+*) keyboard.s içinde gereksiz int 16h kalýntýlarýný temizledim, interrupt
+   emülasyonu (pushfd, push cs, near call ve iret) yerine near call return
+   ayarlarý yaptým.
+
+08/08/2022'de ...
+
+*) 'diskinit.s' içinde ekleme ve düzeltme (TRDOS 386 v2.0.2 'diskinit.s'
+   dosyasý QEMU emulator programýnda hard diskin tanýnmasýný saðlayan ek
+   kod içeriyor, 2020 yýlý kodu, o kodu Retro UNIX 386 v1 'diskinit.s' 
+   dosyasýna ekledim. (Daha önce eklemem iyi olurdu, unutmuþum; TRDOS 386
+   kernelinin 18/04/2021 tarihli 2.0.4 versiyonunda da eksik, en son
+   17/03/2021 tarihli Kernrel v2.0.2'de kullanmýþým !?)		
+
+***
+Retro UNIX 386 v1.2 (Kernel v0.2.2.3) deðiþiklik/düzeltme notlarý sonu.
+***		 

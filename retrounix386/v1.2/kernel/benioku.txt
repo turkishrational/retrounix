@@ -1,0 +1,1087 @@
+Retro UNIX 386 v2 için kernel programlama/geliþtirme notlarý...
+(Erdoðan Tan).. Tarih sýrasýna göre günlük taslak notlar.
+------------------------------------------------------------------------------
+(Yapýlmýþ ve yapýlacak iþlemleri/deðiþiklikleri açýklamak ve hatýrlamak için.)
+
+25/03/2021 (Boðazköy)
+iopen çaðrýlarýna bakýlacak iopen içinde access'e dx'in gelmesi lazým...
+ayrýca sysopen, syscreate, maknod'da flags kýsýmlarýnda düzeltme lazým...
+namei'de de flags kýsmý düzeltme lazým, directory flag ayný zamanda
+regular file þartýna da baðlý... bu bakýmdan düzeltilecek...
+
+26/03/2021
+access, sysexec ve namei tamam
+tüm prosedürlerde hem access 
+(dx ile giriþ olmalý), hem iopen hem iclose hem de
+flaglar kontrol edilecek.
+
+; 01/04/2021
+maknod içi imap tamam.. mkdir kontrol edilecek
+
+; 02/04/2021
+maknod ve mkdir tamam
+sysmkdir tamam...
+
+; 04/04/2021
+_fclose ve anyi tamam (imap update flaglarý tamam)
+
+fakat anyi ile ilgili 'itrunc' içinde 'free' sb, fbm
+bufferlarý ile ilgili olarak eski tip iþlem yapýyor ve sync'yi zorluyor..
+sync anyi içinde olursa daha iyi
+(aslýnda bir sonraki versiyonda sblock içine 'last inode' kayýtý atýlýrsa
+last inode varsa düzeltme iþlemleri gerekir sync'nin last inode'u sýfýrlamasý
+gerekir.)
+
+sysclose ve iclose ile devam
+iclose özel dosyalarda external device driver durumuna göre chdev ve bdev
+duruma göre ilgili prosedürleri çaðýracak...
+regular dosya ise hiç bir þey yapmadan çýkacak...
+iclose içinde 'iget' çaðýrýlmasý lazým ki, flags, major, minor ve öteki
+parametrelere göre kapatma yapýlabilsin.
+
+internal device open ve close iþlemlerinde error prosedürüne sadece sysopen ve syslose'da
+dallanacak. iopen ve iclose içinden sadece error code (eax için ve cf=1 ise döndürülecek)
+yani hiç bir open ve close prosedürü error'e dallanmayacak. stc ve eax'de error kodu
+ile dönecek.
+
+10/04/2021
+iclose, sysclose, sysstty tamam..
+
+11/04/2021
+TRDOS 386 v2.0.3'e göre kontroller...
+diskbss.s tamam
+diskdata.s tamam
+diskinit.s tamam
+diskio.s tamam
+12/04/2021
+ifs.s þimdilik kontrol edilmeyecek
+keyboard.s tamam
+video.s kýsmen tamam, 32 bit push/pop tamam
+16/04/2021
+video.s tamam (VGA hariç)
+vidata.s tamam
+kbdata.s tamam
+17/04/2021
+memory.s tamam (NOT: TRDOS 386 v2'den eksik kýsýmlar var)
+18/04/2021
+stddev.s tamam
+sysdefs.s tamam
+u0.s de kaldým. pdrv_init gerekiyor buffer init'te önemli deðiþiklik olmalý.
+19/04/2021
+prdv_init tamam
+root file system için ldrv0 oluþturulmasý kýsmen tamam
+20/04/2021
+rdrv_init tamam
+23/04/2021
+ldrv_init kod yazma devam ediyor
+24/04/2021
+system buffer'larý yeniden düzenlendi (sblock, mbr, bsbuf, imap, itable)
+u5.s 'imap' içindeki 'imapbuf' 'im.buffer' olarak deðiþtirildi
+rdrv_init deðiþen buffer yapýsý dolayýsýyla deðiþtirildi
+ldrv_init tamam
+u0.s tamam
+u1.s'den devam edeceðim
+25/04/2021
+u0.s de 'rdrv_init' ve 'ldrv_init' düzeltmesi tamam
+u0.s'ye 'get_ldrvt' eklendi
+u5.s modifikasyonlarý ('alloc', 'set_sysbuf_hdr') yapýldý
+u0.s düzeltmeleri devam ediyor
+; 27/04/2021
+u0.s'de file buffer'larýnýn diske yazýlmasý ('flush_db') tamam
+	'sync' prosedürü deðiþti, file buffer header'lar deðiþti (ux.s)
+u5.s'de deðiþiklik gerekiyor (deðiþen file buffer header'lardan dolayý)
+u2.s'deki 'fclose' içinde 'iclose' var, oradan file buffer flush olmasý
+	lazým çünkü sysexit fclose kullanýyor 
+	veya sysexit içinde sync olmasý lazým. (o prosese ait bufferlar
+	diske yazýlmalý... (ilgili ldrv diskleri senkronize edilmeli)
+; 30/04/2021
+u1.s 'sysret' deki 'sync' (u0.s) deðiþiklilerini yaptým
+ve u1.s sysexit' deki 'sync_u' (u0.s) kodunu yazdým.
+'sync_u' [u.uno] için önce file buffer'larý sonra system buffer'larý
+	 LDRV'lere yazýyor (diðer processlerin buffer'larý yazýlmýyor)
+'sync' ise [ii] için önce file buffer'ý sonra o LDRV'ye ait system 
+	buffer'larý diske yazýyor. Diðer 'inode'lar için yazma yapýlmýyor.
+'sysret' modifiye edilmiþ inode'ýn buffer'larýný temizlemiþ oluyor.
+'sysexit' ise 'sysret' deki' sync'den geri kalan bufferlarý temizlemiþ
+oluyor. (dosya açýk iken 'sysexit' çaðrýsý gelirse faydalý olur, diðer
+tüm çaðrýlarda 'error' veya 'sysret' devreye giriyor.).
+; 01/05/2021
+u1.s'de 'syswait' gözden geçirmesi tamam.
+u1.s tamam
+ux.s de u.cdrv'i 1 byte'a indirdim
+u2.s deðiþikliklerinde 'systime' da kaldým
+; 02/05/2021
+u2.s 'sysexec' set UID, set GID düzeltmesi yaptým
+u5.s 'access' owner/group düzeltmesi yaptým
+	(owner için UID ve GID ayný olmalý kuralý)
+ux.s  super block structure'na FmapIndex, ImapIndex, ItableIndex
+      ekledim. Bunlar buffer'larýn hangi sektörü içerdiðine iliþkin.
+u0.s'de '_smod_' FmapIndex, ImapIndex, ItableIndex düzeltmeleri yaptým.	
+u5.s de 'imap' düzeltmeleri yapýldý. (her ldrv için ayrý imap bufferý)
+u2.s 'maknod' tamam (aþaðýya doðru devam)
+; 06/05/2021
+u2.s tamam ('anyi' tamam)
+u3.s tamam (hiç bir deðiþiklik yapýlmadý)
+u4.s tamam (hiç bir deðiþiklik yapýlmadý)
+ux.s 'ldrv' ve 'pdrv' structure'larýndaoýk deðiþiklik yapýldý
+     ('pdrv' de bir önceki duruma dönülürken, 'ldrv' de deðiþiklik oldu)
+     ('imap', 'itable', 'fbmap' sector indexleri 'ldrv' talosuna taþýndý)
+u0.s 'ldrv_init' deðiþikliði yapýldý (yeni 'ldrv' tablo yapýsýna göre)
+u0.s, u1.s ve u2.s de düzeltmeler yaptým.
+u5.s deðiþiklikleri yapýlacak
+; 07/05/2021
+u5.s ve u8.s'de buffer düzenlemeleri devam ediyor
+; 08/05/2021
+u8.s 'bufaloc' deðiþiklikleri iptal edildi, 'bufaloc' doðrulandý
+	(sadece fiziksel disk numarasý ve fiziksel sektör esaslý buffer
+	 kontrol yapýlacak...)
+; 09/05/2021
+ux.s	'ldrv' structure deðiþti, herþey superblock içinde
+	superblock hariç tüm buffer'lar disk okuma yazma esnasýnda
+	kullanýlacak, sadece superblock diske direkt yazýlacak
+u0.s 	'rdrv_init', 'ldrv_init', 'bf_init'düzeltmeleri tamam
+; 10/05/2021
+u0.s 'pdrvmount' eklendi (fiziksel diskleri raw eriþime açýp/kapamak için)
+ux.s pdrv.status bit 0, 1 ise fiziksel diskin mounted olduðunu gösterecek
+root (fiziksel) diski, rdev içine kayýtlanýyor (index numarasý olarak)
+(fiziksel disk mount olmadan logical disk kurulamayacak)
+; 11/05/2021
+ux.s 'SB.status' düzenlemesi (sistem buffer'larýnýn durumu)
+u0.s 'flush_bufs' tamam, 'sync', 'sync_u' düzeltmesine devam
+; 12/05/2021
+ux.s Superblock structure'ýna son deðiþikliði yapan kullanýcý/process 
+     no eklendi (deðiþikliði yapan process 'sysnc_u' ile diske yazdýracak)
+     ayrýca fiziksel sürücü indeks numarasý alaný eklendi.
+     (dword olan SB.Status byte'a dönüþtürüldü)
+u0.s tamam ('sync' ve 'sync_u' düzeltmeleri yapýldý)
+; 13/05/2021
+u0.s'de küçük düzeltmeler yaptým
+; 14/05/2021
+u0.s 'sync_all', 'flush_all', 'abort' prosedürlerini yazdým
+u1.s 'sysabort' and 'syssync' yeni sistem çaðrýlarýný yazdým
+	'sysexit' system çaðrýsý içine 'abort' ekledim
+	(Abort'un amacý diske yazýlýrken hata veren ve kilitlenen buffer'larý
+	geçersizleþtirerek serbest býrakmak, sadece buffer'ýn sahibi
+	veya 'sysexit' içinden yapýlabilir. Sadece buffer'ýn sahibi yapabilir
+	çünkü syswrite içinden dönecek hataya retry veya abort olarak tepki
+	vermesi gerekiyor. Yazma iþlemini yeniden denemeyecekse, 'sysabort'
+	çaðrýsý gerekir yoksa buffer'ý meþgul býrakýr.)
+; 15/05/2021
+u0.s, u1.s, ux.s deðiþiklikleri buffer error-lock  iptal edildi
+	diske yazma hatasý olursa buffer iptal ediliyor, yazma
+	(syswrite) o sektörde iptal oluyor ve o sektör
+	yazýlmamýþ gibi yazma byte sayýsý döndürülüyor.
+	kulanýcý istertse ayný sektörü ayný dosya pozisyonundan tekrar
+	yazmayý deneyebilir (file pointer ilerlemediði için) 
+	Bu durumla ilgili olarak 'sysabort' sistem çaðrýsý da gerek
+	kalmadýðý için iptal edildi. 'Abort' prosedürünü sildim.
+
+; 16/05/2021
+disk buffer iþlemlerinde çok karýþýklýk olduðu için
+unix v7 x86 (Robert Nordier, 1999) koduna göre bir çok þeyi yeniden yazýyorum	
+sysread ve syswrite'ý yeniden yazýyorum, inode ve file structure'larýnda
+unix v7'ye göre deðiþiklikler yapýyorum; readi, writei ve buffer prosedürleri
+deðiþecek.. Asýl olarak buffer (disk write) iþlemlerinde saðlama ve tutarlý
+olmasý için bu deðiþikliklere baþladým. Eski kod büyük ölçüde deðiþecek.
+(Bir çok yerde unix v1'den kalma kod parçalarý ve yapýlar iptal olacak).
+plock, prele, readi, writei, readp, writep prosedürleri yazýlacak...
+
+; 17/05/2021
+	u6.s 'plock', 'prele', 'readp', 'writep' tamam
+	bunlarýn içinde sleep, wakeup ve psignal yazýlacak
+	bu prosedürlerin içinde EDX register'ýnýn deðilmemesi gerekiyor.
+	ayrýca diðer register'larýnda korunuyor olmasý kontrol edilecek.	
+; 20/05/2021
+; 21/05/2021
+	u4.s coherent 4.2 (MWC) kaynak kodundan da (proc.c) yararlanarak sleep
+	ve wakeup prosedürlerini yazýyorum. ('sphi', 'splo' ve 'spl' coherent'ten)
+
+; 22/05/2021
+	u6.s readp, writep, plock, prele düzeltmeleri yaptým (özellikle push/pop)
+	u4.s psig'de kaldým, psig'deki 'resume' retro unix'e özgü olmak durumunda
+  	(unix v7 ve coherent resume/restore kodlarý uyumsuz ve çok iyi deðil)
+	(uyumsuzluk sebebi özellikle retro unix'in 'sysentry' push, pop
+	kernel page table vs daha basit olmasýndan kaynaklý, v7'de
+	çok maksatlý save/resume var, u.q_save, u.s_save, u_rsave gibi)
+    	'sleep' kýsmen tamam .
+	(sleep'de ve wakeup'ta eax, ebx, ecx ve edx deðiþebilir)
+	alt prosedürler esi, edi ve ebp'yi kullanýmor
+     	'issig' tamam.
+     	'sphi', 'splo' ve 'spl' (coherent 4.2'den uyarlama) 
+     	u4.s içine yazýlacak.
+     	HASH prosedürü tamam (farký 'getc' adresden multiscreen özelliði
+	gözetildiði için HASH getc'h dýþýnda 10' ve daha büyük
+	sayý/index üretiyor.. Sonra 2 bit sola kaydýrýlýp 'slpque' pointer
+	ofset'i haline getiriliyor. 'sleep' 'getc' için HASH kullanmayýp
+	sanal tty ekranlara göre [u.ttyn] deðerinden 0-9 arasý index veriyor
+	ve bu [slpque+0]..[slpque+36] þeklinde ilk 10 pointer'ý veriyor
+  	Toplam 26 sleep kuyruðu pointer'ý var ve diðerleri 10-25 arasý...
+	u1.s'de 'rdwr' prosedürüne unix v7'deki 'rdwr' prosedürünün 
+	c kaynak kodundan açýklamalar ekledim, ufak düzeltme yaptým.
+; 23/05/2021
+	u4.s'de 'sleep', 'issig' düzeltmeleri yaptým. 'sleep' tamamlanmadý.
+; 24/05/2021
+	u4.s ve u6.s'de 'sleep' 'wakeup' deðiþiklileri tamamlandý.
+	issig, psig düzeltmeleri yaptým.
+; 28/05/2021
+	u4.s'de 'sleep' ve 'wakeup' düzeltmeleri yaptým.
+	u1.s'de	'sysent', 'sysret' ve 'error' de önemli deðiþiklikler yaptým.
+    ('sleep' ve 'wakeup' dönüþlerinde stack ptr'ýn doðru olmasý için v.s.)
+u4.s'de	'psig' ve 'resume' prosedürlerini düzelttim,
+; 29/05/2021
+	u4.s de 'psig' içinde signal resetleme islemi var. 
+	(iþlem gören signal'in 'p.signal' word'ü içindeki 
+	bit'i temizlenir/sýfýrlanýr.)
+	Bugün itibarý ile Retro UNIX 386 v2 signal/sinyal iþleme 
+	açýklamasý:
+ 	Default (Kullanýcý belleðinde ayarlanmamýþ) signal iþleme için
+	([u.srb]=0) daima son signal'in numarasý ve zamaný kayýtlanýr.
+	Bu durumda sadece bir signal/sinyal tipi için sinyal kabulünün
+	aktif olmasý mantýklýdýr.
+	Kill signal'i için proses 'sysexit' e yönlendirilir. 
+	Tüm signal'lerde signal numarasý 'u.snum' ve zaman 'u.s_time'
+	kaydedilir ama daima son aktif sinyal için kayýt yapýlmýþ olur.
+	SRB ve signal handler (callback) yöntemlerinde handler adresi
+        'u.s_addr'den alýnýr. 'u.signal' bit esaslý olarak 16 signal'in
+	enabled/aktif durumunu flag olarak kayýtlamak için kullanýlýr.
+	Ve 'issig' prosedürü sadece o prosesin aktifleþtirdiði yani
+	kabul ettiði signalleri 'psig:' adresine yönlendirir.
+	Unix v7'den farklý olarak, deðeri 1 olan bitler 'enabled'
+	signallere/sinyallere ve deðeri 0 olan bitler iþlem görmeyecek
+	ignored/pasif signal/sinyal numaralarýna karþýlýk gelir.
+	'SIGKIL' kill signal'i aktif/pasif durumuna bakýlmaksýzýn
+	uygulanýr.
+u4.s'de 'setrun' ve 'setrq' prosedürlerini yazdým. Unix v7'de kullanýlan
+	'runin' ve 'runout' parametrelerini kullanmýyorum.
+	Retro UNIX 386 v2'de process'ler deðilde sadece memory page'ler
+	swaplanlandýðý için (yani bir proses bellekte iken, onun
+	onun page table'larý swap diskinde veya dosyasýnda 
+	page içerebiliyor. Bu page fault durumunda geri yükleniyor) 	 
+	'runin' ve 'runout'a gerek kalmýyor. (Fakat bellek'te atanacak
+	sayfa kalmazsa yeni bir proses baþlatýlamaz veya bellek yetersiz
+	hatasý oluþur. (swap diskine atýlabilecek yeterli sayýda bellek
+	sayfasý da kalmazsa..)
+; 30/05/2021
+	u3.s'de	'switch', 'qswitch' prosedürlerini yazdým..
+ 	'rswap' ve 'wswap' prosedürlerinde düzeltme yaptým, 'idle'
+	prosedüründe deðiþiklik yaptým. Önceki runix versiyonunun
+	'swap' ve 'tswap' prosedürlerini silmeden devre dýþý býraktým
+	('%if 0' ile '%end if' direktifleri arasý kodlar derlenmez)
+ux.s'de user ('u') area'da u.fpregs düzeltmesi yaptým, 94 yerine 108
+	byte olmasý lazýmdý (32 bit çalýþmada floating point
+	registerlerinin save/restore iþlemleri 108 byte yer kullanýr)
+; 05/06/2021 (Kamiloba)
+	u4.s'de 'clock' prosedürünü yazmaya devam 
+	(1 haziran 2021'de baþladým)
+	unix v7 clock ile TRDOS 386 v2 (2.0.4) clock prosedürünün
+	karmasý þeklinde tasarlýyorum. (clock prosedürü
+	içinde kontrole edilen timer events, 'timer_set' alanlarý
+	ve 'timer_set' yapýsýnýn açýklamasý ux.s'de)
+	ux.s'de 'timer_set', timer events (TRDOS 386 v2'den alma) 
+	yapýsýný az deðiþtirerek Retro UNIX 386 v2'ye uyarlýyorum.
+	(Retro Unix v2'ye unix v7'de yakýn karþýlýðý 'callouts' olan 
+	spesifik özellik ekliyorum, öncelikli referans TRDOS 386 v2.)
+; 06/06/2021 (Kamiloba)
+	u4.s'de	'clock' prosedüründe deðiþiklikler yaptým.
+	unix386.s'de 'rtc_int' ve 'timer_int' deðiþiklikleri yaptým. 
+	(TRDOS 386 v2'deki ek özelliklere göre deðiþiklikler.)
+	CMOS_READ prosedürünü u0.s'ye taþýdým (CMOS_WRITE'ýn yanýna).
+	Multi screen ve multi tasking testi niteliðinde olan, 
+	2. video sayfasýna Tarih ve saat bilgisi yazan geçici kodu
+	iptal ettim. Saniyede 2 kez çaðrýlan rtc_int içinde,
+	her 1 dakika'da 'epoch' çaðýrýp, oradan 'R_TIME' güncelleyen
+	kod ekledim. Saniyede bir kez R_TIME artýrýyor.
+	Motor çalýþýyorsa 200 tick sonunda motor durduruluyor
+	(100 Hz'den 2 saniye çalýþma süresi).
+; 07/06/2021 (Boðazköy)
+	unix386.s 'timer_int' ve 'rtc_int' düzeltmeleri yaptým.
+; 10/06/2021 (Boðazköy)
+	NASM v2.15 ile derleme kontrolü ve gereken düzeltmeleri yaptým.
+; 16/06/2021
+	NASM v2.15 hata mesajý satýr numaralarýný hatalý verdiði için,
+	NASM v2.11 ile, geçici kodlar ekleyerek 11 Haziran'dan itibaren
+	derleme kusurlarýný düzeltip, ilk unix386 kernel dosyasýný
+	oluþturdum.
+	Bundan sonra unix v7 x86 kodunu referans alarak
+	ama Retro UNIX v1.1 ve v2 taslak yapýsýný çok bozmadan,
+	dosya sistemini "file/inode write block", "inode table"
+	"inode map", "free blocks map" ve "super block" write/modification
+	flag/bayrak deðerinden birbirne kilitleyerek diske yazdýracaðým.
+	
+	(Yani kritik sistem sektörlerinde ayný inode'a ait olmayan veya
+	ayný u.uno'ya ait olmayan bir deðiþiklik olursa veya buffer'daki 
+	kritik sistem sektörü deðiþirse kritik sektörler birlikte 
+	yazýlacak (update) olacak.
+	
+; 18/06/2021 (Boðazköy)
+	unix386.s'de TRDOS 386 v2'den alma 'fpready' fpu hazýr kontrolü,
+	u1.s'de ve u2.s'de 'sysver' (39) ve 'sysfpstat' sistem çaðrýlarý
+	(fpu hazýr ise 'u.fpsave' set edilebiliyor)
+	u0.s'de 'sysinit' de kontrol ve düzeltmeler. 'unix386.s' de
+	PIT'ýn 100 HZ'e ayarlanmasý. 'ux.s', 'sysdefs.s' ekleme ve
+	düzeltmelerini yaptým. 'rtc_int' de düzeltme yaptým.
+	(Unix v7 x86 'main.c' ve 'machdep.c' ile kýyasladým.)
+; 21/06/2021 (Kamiloba)
+	ux.s'de 'pdrv.mountcount' deðiþikleri
+ 	u7.s'de ufak düzeltmeler
+; 22/06/2021 (Kamiloba)
+	u0.s'de 'pdrvmount' deðiþikliði/düzeltmesi
+	ve 'mntc' eklemesi (mount table mntc -mount count- 
+	üzerinden kontrol edilecek, 'pdrv.mntcount' ise 
+	fiziksel diskin kaç adet logical disk mount'u olduðunu
+ 	gösterecek, böylece o kadar logical disk sektörleri için 
+	raw eriþim engelleme kontrolü yapýlacak. Mounted ldrv 
+	sektörlerine denk gelen pdrv sektörlerine raw olarak
+	yani block device inode üzerinden yazýlamayacak.
+; 24/06/2021 (Kamiloba)
+	u5.s'de 'iget' yeniden yazýldý (mount kontrolü eklendi)
+	ve mounttab yapýsýnda deðiþiklik oldu, LDRV adresi yerine
+	LDRV numarasý kullanýlacak...
+; 26/06/2021 (Kamiloba)
+	u0.s'de 'rdrv_init' ve 'ldrv_init' düzeltmesi, 
+	u5.s'de 'icalc' da deðiþikliði.
+; 29/06/2021 (Kamiloba)
+	u5.s'de 'get' ve 'icalc' düzeltmeleri
+	u8.s'de '_dskrd', '_dskwr' and '_poke' düzeltmeleri
+	ux.s'de 'ldrvtable:' buffer size düzeltmesi
+; 05/07/2021 (Kamiloba)
+	ux.s'de 'sync_i' error kodlarýnýn eklenmesi
+	u0.s'de 'sync_i' prosedürünün yazýlmasý
+	u8.s'de 'get_phy_drv' içinde ldrv tablo boyutu düzeltmesi
+; 12/07/2021 (Kamiloba)
+	u0.s'de 'sync_i' ye devam ettim
+	u8.s'de _dskwr_ ekledim,
+	'_dskwr_', 'poke' ufak deðiþiklik yaptým.
+; 15/07/2021 (Boðazköy)
+	u0.s'de'sync_i' yi tamamladým
+	ux.s'de 'sync_i' ile ilgili deðiþiklik
+	u5.s'de 'set_sysbuf_hdr' düzeltmesi ve 'sync_i' açýklamasý
+; 16/07/2021 (Boðazköy)
+	u0.s'de 'sync_i' düzeltmesi
+; 18/07/2021 (Kamiloba)
+	ux.s'de SuperBlock parametre ekleme (system buffer'larý).
+	Böylece dosya yazarken itab, imap, fbm buffer ve sektörleri
+	superblock üzerinden ldrv'den takip edilecek.
+	u5.s'de 'icalc' düzeltmesi (system buffer'larý süper blok
+	üzerinden takip edilecek)
+	u0.s'de 'sync_i' düzeltmesi yaptým
+	u8.s'de 'bufaloc' düzeltmesi (sistem buffer'larýnýn baþka
+	maksatla kullanýlmasýný önlemek için) yaptým
+20/07/2021 (Boðazköy)
+	u8.s'de 'bufaloc' düzeltmesi (sistem buffer'larýnýn ayný	
+	sektörü göstermesi durumunda, bir kullanýcý tarafýndan
+	kullanýlmakta iken, baþka bir kullanýcý tarafýndan 
+	sahiplenilmemesi ve böylece sistem buffer'larýnýn yazma
+	bütünlüðünü -kullanýcý esaslý- korumak için ekleme) yaptým.
+	[Baþka kullanýcý sistem buffer'ýný baþka maksatla okuyup,
+	yazabilirdi fakat buna 'access error' verdirseydim, bu kez
+	sistem buffer'ý olarak kullanýlmasý durumunda da eriþim
+	olamazdý, o nedenle 'access error' verdirmedim. Yine de,
+	kernel kodunda, mantýksal sürücüde sadece bir inode'a göre
+	bufferlarý kullanýldýðý için, inode deðiþince 'sync _i'
+	ile sistem bufferlarý yazýlýyor. Baþka kullanýcý bu arada
+	baþka inode'la çalýþacak ise, 'sync_i'yi bypass edip
+	sistem bufferlerýný ve dosya sektör buffer'ýný
+	deðiþtiremez. Raw olarak diske yazýlmasý için de diskin
+	'umount' durumunda olmasý veya en azýndan 'root drive'
+	için raw access korumasý gerekiyor ki, o durumda, zaten
+	sistem buffer'larý 'bufaloc' dýþýndan korunmuþ olur. 
+	Dolayýsýyla 'bufaloc' içinde '20/07/2021' iþaretli
+	kod eklemesi gereksiz olabilir.]
+21/07/2021
+	ux.s'de open file structure düzeltmesi yaptým. unix v7'deki
+	gibi bellekte yüklü inode adresine deðil diskteki inode
+	number'ý içeriyor. Ve mantýksal sürücü index numarasýný 
+	içeriyor (monte edilmiþ dosya sistemi ise, bunun mantýksal
+	sürücü numarasý 1 veya daha büyüktür, bu durumda inode
+	number bu sürücüdekidir yani root fs'deki inode number
+	deðildir. Monte tablosu hangi dizine monte edildiðini
+	gösterir. Open file yapýsýndaki reseved byte alaný monte
+	tablosu indexinin 1 fazlasý olabilir.
+22/07/2021
+	ux.s'de file structure düzeltmesi. unix v7deki, gibi deðil
+	runix v2'ye özgü open file structure'a az deðiþikle dönüþ
+	yaptým.
+	u2.s'de 'fclose' kodunda deðiþiklik yaptým.
+	u1.'s de 'sysclose' kodunu kontrol ettim, sync iþlemini
+	'_fclose' içinde yaptýrdýðýmdan deðiþiklik gerekmedi.
+	'sysexit' de 'sync_u' vardý, deðiþiklik gerekmedi.
+	'sync_x' dosya kapanýrken sistem blok buffer'larýný
+	diske yazdýrýp eþitliyor ve sistem blok pointer'larýný
+	ve status flaglarýný geçersiz hale getiriyor.
+	Hata alýnsa bile bunu yapýyor, çünkü dosya kapatýlýyor.
+	'sync_u' ise kullanýcýya ([u.uno]'ya) ait buffer'larý
+	diske yazdýrýyor, 'system buffer' flag 1 ise pas geçiyor.
+	(Çünkü sistem blok buffer'larýnýn tek tek karýþýk sýrayla
+	 deðilde birlikte ve sýrayla yazýlmasý gerekir..
+	 file buffer, itab, imap, fbm, superblock sýrasýný
+	 uyguluyorum. Dosya yazýlýrsa, inode, inode yazýlarsa inode
+	 map, bu da yazýlmýþsa free block map ve fbm deðiþtiði için
+	 ona göre kayýt içeren superblock yazýlýyor. Bir aþamada
+	 baþarýsýzlýk olursa devam eden aþama tutarsýzlýk artmasýn
+	 diye yazýlmýyor, iptal geçersiz duruma getiriliyor. Böylece
+	 sistem blokunun diskteki bir önceki hali nispeten daha 
+	 tutarlý olacaktýr. Aksi takdirde diske baþarýyla yazýlamamýþ
+	 deðiþiklikler yazýlmýþ gibi sistem bloklarý, free block
+	 map ve süper bloktaki free block count, inode structure
+	 ve inode map v.s. hatalý olurdu. Bir önceki aþamada
+	 yazma hatasý olursa sýrasý gelen sistem bloklarýný yazmayý
+	 durdurmanýn sebep olacaðý tutarsýzlýk, yazýlmasýna kýyasla
+	 daha az olur ve superblock'taki 'SB.LastInode' alanýndaki
+	 inode numarasýna göre tutarlýlýk kontrolü yapýlabilir.)
+	u0.s'de 'sync_u' yazýlacak...
+23/07/2021
+	u8.s'de 'dskwr' içinde deðiþiklik yaptým.
+	([pdn] yerine [ebx+bufhdr.phydrv] kullanýlacak.)
+	u0.s'de 'sync_u', 'flush_bufs_u', 'flush_bufs'
+	ve '_smod_' prosedür düzeltmeleri yaptým.
+	u2.s'de 'fclose' düzeltmesi yaptým.
+	u1.s'de 'sysexit' ve 'sysclose' düzeltmesi yaptým.
+	u0.s'de 'rdrv_init' ve 'ldrv_init' ortak koduna/prosedürüne
+	superblock buffer pointerlerini ve 'SB.LastInode'
+	alanýný temizleme kodu ekledim. (Diskte bu alanlar
+	bir önceki kapanýþta veya 'sysexit' te dolu býrakýlmýþ
+	ise bu þekilde temizlemek iyi olacaktýr.)
+	u5.s'de 'alloc' prosedüründe düzeltmeler devam ediyor..
+27/07/2021
+	u5.s'de 'alloc' prosedüründe düzeltmeler devam ediyor..
+28/07/2021
+	u5.s'de 'alloc' prosedüründe düzeltmeler devam ediyor..
+30/07/2021
+	u5.s'de 'alloc' prosedüründe düzeltmeler tamamlandý. 
+03/08/2021
+	u5.s'de 'alloc' prosedüründe sýralama düzeltmesi yaptým.
+08/08/2021
+	u5.s'de 'alloc' prosedüründe 'sync_i_x' düzeltmesi yaptým.
+	u0.s'de	'sync_i' ye 'sync_i_x' eklemesi yaptým.
+14/08/2021
+	u5.s'de 'free' prosedürünü 'alloc' prosedürünün tersi olarak
+		yeniden yazdým. 
+15/08/2021
+	u5.s'de 'imap' prosedürünü düzelttim. 
+		('sync_i' ve diðer yeni özellikleri uyguladým)
+	u2.s'de 'maknod' da ufak deðiþiklikler, düzeltmeler yaptým.
+	u0.s'de	'flush_bufs' da ve 'flush_all' da
+		system special buffer flag düzeltmeleri yaptým.
+		(system special block buffer'larý da 'sync' ve
+		'sync_all' prosedürleri esnasýnda diske yazýlmalý.)
+	u5.s'de 'anyi' de 'sync_i' ve 'imap'a göre düzeltmeler yaptým.
+		('itrunc' prosedürünü kontrol ettim, yanlýþ yok.)
+16/08/2021
+	u5.s'de 'icalc' prosedüründe hata düzeltmesi.
+17/08/2021
+	u5.s'de 'icalc' prosedüründe 'SB.Status' kod düzeltmesi.
+	u0.s'de 'sync_i' prosedüründe 'SB.Status' kodlarý düzeltmesi.
+		'sync_i' içinde hata düzeltmesi ve iyileþtirme.
+20/08/2021 (Kamiloba)
+	u5.s'de 'mget' (sector offset hesabý) düzeltmesi yaptým.
+21/08/2021
+	u5.s'de 'imap' düzeltmesi (kýsaltma yaptým, 'sync_x').
+	u6.s'de 'readi' prosedürünün 'dskr' kýsmýnýn yeni sync
+		(buffer-disk senkronlama) mantýðýna uyarlanmasý..
+22/08/2021
+	u5.s'de 'mget' düzeltmesi.
+	u8.s'de 'dskrd' (existing sector buff, 'dkrd_1') düzeltmesi.
+	u6.s'de 'readi' içinde 'dskr' kýsmýnda 'sync' ile ilgili
+		ekleme, düzeltmeleri yaptým
+		(buffer-disk senkronlama tamam).
+23/08/2021
+	u6.s'de 'writei' prosedürünün 'dskw' kýsmýný yeni sync
+		(buffer-disk senkronlama) mantýðýna uyarladým.
+24/08/2021 (Boðazköy)
+	u6.s'de 'writei' içinde 'dskw' kýsmýndaki sync ve buffer
+		flag ile ilgili ekleme ve düzeltmeleri tamamladým.
+		((Gerekli ekleme ve deðiþiklikler tamamlandý.))
+02/10/2021 (Boðazköy)
+	Geçtiðimiz hafta yaptýðým kernel derlemelerinde hatalar
+	alýnca, en son 27/09/2021 olan kaynak kodu versiyonunu
+	kayýtlayýp, 1.1 versiyonu esaslý (ama 2.0 dosya sistemli)
+	basitleþtirmeye karar verdim. (Ýlk baþarýlý çalýþmadan
+	sonra 2.0 versiyonunun özellikleri aþamalarý olarak tekrar
+	ekleyeceðim.)
+03/10/2021 (Boðazköy)
+	32K'dan büyük retro unix (386 v2) kernelinin hata vermesi
+	sebebi olarak (stack overwrite) boot (boot5.asm) dosyasý
+	içinde stack segmenti son olarak kernel'e dallanmadan önce
+	ayarlayan kodun ([Extra_Segment] deðiþkeninden bx ve ss'ye
+	aktarma yaparken yanlýþlýkla 1000h yerine 800h geliyordu,
+	kernel yüklendikden sonra 800h'ye resetlenmesini iptal ederek
+	boot kusurunu düzelttim. 32K'dan büyük retro 'unix' kernel
+	dosyasý çalýþýyor. Fakat, kernel'in halen çalýþmama sebebi
+	henüz 'init' dosyasýnýn yüklenmesi aþamasýna doðru gelinememesi.
+	Dolayýsýyla memory ve disk hazýr mesajýndan sonraki aþamalarda
+	retro unix 386 v2 kernel düzeltmesine devam ediyorum.
+04/10/2021
+	unix386.s dosyasýnda ufak düzeltmeler yaptým.
+	keyboard.s, u4.s, u9.s'de 'sleep', 'wakeup', 'getc', 'sndc' 
+	prosedürlerinde yeni tip channel esaslý ve multiscreen tty num
+	ayrýcalýklý düzeltmeleri yaptým. 'readi' ve 'writei' deki sleep
+	caðrýlarýný da deðiþtirdim. Sleep'de priority kullanýlýyor,
+	bunu geçici olarak PZERO olarak ayarladým. 'syssleep'deki
+	'sleep' çaðrýsýnda da PZERO priority kullandým.
+	(Bunun deðiþmesi gerekebilir. Farklý priority deðiþkenleri
+	var, buradaki priority p.pri, [curpri] olup unix v7'den uyarlama
+	Retro UNIX'e özgü priority deðiþkeni var onunla çeliþebilir.
+	Ýleride düzenleme gerekecek.)
+08/10/2021
+ 	unix386.s ve u0.s'de düzeltmeler, hata yerini bulmak için
+	geçici (temporary) kodlar.
+09/10/2021
+ 	unix386.s ve u0.s'de düzeltmeler, hata yerini bulmak için
+	geçici (temporary) kodlar.
+	u8.s'de diskio (chs r/w) düzeltmesi.
+11/10/2021
+	u8.s'de 'diskio' prosedüründe giriþ düzeltmesi.
+15/10/2021
+	u0.s'de 'ldrv_init' prosedüründe düzeltme.
+17/10/2021 (Boðazköy)
+	Kerneli baþlatmaktaki baþarýsýzlýklarý düzeltemediðim için
+	tekrar v1.1'den deðiþtirmeye baþladým. Geçici (veya kýsmen
+	kalýcý olacak þekilde) unix386.s'yi Version 1.1'e göre az
+	deðiþtirdim. u0.s'deki 'sysinit'i ve u1.s'deki sysret'i
+	ve u8.s'deki 'diskio' ve ilgili prosedürleri deðiþtirdim.
+	(sb0 ve sb1 superblock'larýný kullanmaya baþladým, yeni
+	superblock structure, yeni inode, yeni buffer headers
+	ama eski tip process yapýsýný kullanýp, en basitiyle kerneli
+	çalýþtýrýp, init dosyasýný yüklemek istiyorum.)
+	Bu önemli deðiþikler devam ediyor.
+	(Sonradan, önceki kernel kodu include dosyalardan yeni tip
+	kodu eklemeye baþlayacaðým. Önce kerneli baþarýyla çalýþtýrmam
+	gerekiyor.)
+18/10/2021
+	u2.s'de 'namei' düzeltmesi/iyileþtirmesi.
+	ux.s'de	'namei' ile ilgili 16->32 bit deðiklikleri.
+	u6.s'de 'readi' basitleþtirme (v1.1'deki gibi) deðiþiklikleri.
+	u6.s'de 'readi', 'dskr' deðiþiklikleri tamam.
+	[idev] yerine [cdev] geldi. 'iget' ve 'mget' de düzeltmeler
+	gerekiyor. 'writei ve 'dskw' deðiþtirilecek.
+22/10/2021
+	u6.s'de 'writei' içinde chrdev write kýsmý düzeltmeleri ve
+	'readi' içinde chrdev read kýsmý ile ilgili küçük düzeltmeler.
+	('writei' içinde blkdev düzeltmeleri ve fs kýsmý yapýlacak)
+24/10/2021
+	u6.s'de 'writei' içinde blkdev write kýsmý düzeltmeleri.
+	u6.s'de 'sioreg' içinde ve ux.s'de 32 bit u.scount, u.pcount
+	ve u.bps uygulamasý (32 bit register mov kullanmak için).
+	('readi' ve 'writei' içinde 32 bit iyileþtirmeleri yaptým;
+	movzx'ler yerine mov ve word yerine dword komutlarý kullandým.)
+	u6.s'de 'write_i' içinde 'dskw' düzeltmeleri tamam.
+27/10/2021
+	u5.s'de 'iget' düzeltmeleri, 'idev' yerine 'cdev' ile 
+	prosedürden çýkýþ olacak.
+	u8.s'de geçici 'dskrd' ve 'dsk_rd', 'dskwr' deðiþiklikleri.
+	u8.s'de 'get_system_time'daki eax'i RTC interrupt'da kayýtlanan
+	[R_TIME] dan alma düzenlemesi.
+	u5.s'de 'icalc' düzeltmeleri tamam.
+	(mget ve iget düzeltmelerine devam ediyorum)
+28/10/2021
+	u8.s'de 'dskwr' ve 'dskrd' de '_diskio' giriþinde düzeltme.
+	u5.s'de 'iget' düzeltmeleri tamam.
+	u5.s'de 'alloc' ve 'alloc_m' düzeltmeleri yaptým. (Tamam.)
+29/10/2021
+	u5.s'de 'free' prosedüründeki düzeltmeler tamam.
+30/10/2021
+	u1.s'de 'sysread' ve 'syswrite' düzeltmeleri tamam.
+	u1.s'de 'sysopen' ve 'sysclose' düzeltmeleri tamam.
+	('fclose' düzeltildi, 'getf' hatasýz, 'sync_x' geçici, 
+	'iopen' ve 'iclose' da device için düzeltme gerekebilir.)
+	u2.s'de 'anyi' ile ve sonra syscreat, mkdir ve truncating
+	(rmdir v.s.) iþlemleri için yarýn (pazar günü) devam edeceðim.
+31/10/2021
+	u7.s'de 'iopen' (device) ve 'iclose' (device) düzeltmesi.
+	u5.s'de "access' ve 'iget' ('icalc' dönüþü hata) düzeltmesi.
+	u7.s'de 'otty', 'ottyp' ve 'ottys' tamam. 
+	(Runix v1.1 'ottyp'de bug var! -ottys_3 adresinde ebx hatasý-)
+	u7.s'de 'ctty', 'cttyp' ve 'cttys' tamam.
+01/11/2021
+	u7.s'de 'iclose'da ufak bir ([u.mode]) düzeltme.
+	u7.s'de 'ottyp' ve 'cttyp' prosedür kodlarýnda düzeltme.
+	('u.mode' veya 'chrdev.omode', direkt 'al' ve 'dl' giriþi.)
+	u7.s'de yeni 'sret' (boþ) prosedürü cf=0 ve eax=0 olarak dönüyor.
+	(yeni 'cret' kodu 'sret' kodu ile ayný.)
+	(iochd, iocfd, olpr, clpr, iottyp, iottys, ioclpr þimdilik
+	boþ prosedürler; bunlarýn hepsi 'sret'e dallanýyor;
+	cf=0 ve eax= 0 olarak dönüyorlar.)
+	u6.s'de 'readi' ve 'writei' de 'iget' sonrasý (edi) düzeltmesi.
+	u1.s'de 'sysstty' düzeltmesi ('_ottyp_, _cttyp_').
+	u6.s'de 'wtty' ve 'xmtt' düzeltmesi.
+	('wmem' ve wlpr'de deðiþiklik þimdilik gerekmiyor.)
+	u6.'s'de 'readi'de geçici eski tip 'sleep' uygulamasý. 
+	(getchar/rtty durumunda klavyeden karakter gelmiyorsa sleep).
+	u6.s'de 'rcvt' ve 'rtty' düzeltmesi.
+	('rmem' ve rlpr'de deðiþiklik þimdilik gerekmiyor.)
+	Character aygýtlarýnýn o/c/r/w düzeltmeleri þimdilik tamam.
+	Block aygýtlarýnýn o/c/r/w düzeltmerine devam.
+02/11/2021
+	u8.s'de disklerin (block aygýtlarýnýn) r/w prosedürleri olan
+	'rfd', 'wfd', 'rhd', 'whd' de basit düzeltmeler yaptým.
+	(Bunlardan baþka block aygýtý -disk- o/c/r/w prosedürü yok.)
+	(('chrdev_init' prosedürünün yazýlmasý gerekiyor.))
+	((('anyi' ve ilgili truncating prosedürlerine sýra gelecek.)))
+05/11/2021
+	u0.s'de 'chrdev_init' tamam. (chrdev tablolarý oluþturuyor.
+	Sadece major, minor, type and subtype alanlarýný dolduruyor.
+	Tablo sýrasý: null, mem, tty0, .., tty7, tty8, tty9, lpr) 
+	u2.s'de 'anyi' düzeltmesi tamam (deðiþiklik: jump to 'sync')
+	u5.s'de 'imap' düzeltmesi tamam. 
+	('maknod' içinde 'imap_x' kontrol edilecek)
+	('itrunc' ve 'tloop' prosedürleri kontrol edilecek.)
+06/11/2021	 
+	u2.s'de 'maknod' kaynak kodunda düzeltme yaptým. 
+	'imap_x' çaðrýsýný doðruladým.
+	u5.s'de 'itrunc' ve 'tloop' prosedürlerini kontrol ettim,
+	hatalý kýsým farkedemedim (doðruladým).
+	u1.s ve u2.s'de 'iget' dönüþü hatanýn [u.error] içine
+	iþlenmesi düzeltmelerini yaptým. (Eski 1.1 kernel versiyonunda
+	herhangi bir yerde error'e dallanýyordu.) 
+	(("Error:" addresine dallanmadan önce eax'deki error/hata
+	kodunun, [u.error] içine kayýtlanmasý gerekiyor,
+	çünkü "Error:" sonrasý kod [u.error] içindeki deðerle hata
+	dönüþü yapýyor, [u.error] sýfýr ise hata dönüþü olmuyor.))
+07/11/2021
+	u9.s'de 'getc'/'getc_s' prosedüründe 'sleep' çaðrýsý giriþini
+	düzelttim (eski versiyon sleep'e göre giriþ gerekiyordu).
+	u7.s'de 'sysmount', 'sysumount' ve 'getspl' prosedürlerinin
+	düzeltilmesi tamamlandý.
+08/11/2021
+	u6.s'de 'writei' düzeltmesi. (Kullanýlmayan bölümü sildim)
+	u8.d'de 'get_phy_drv' geçici olarak kullaým dýþý olduðundan
+	'%if 0' içine aldým.
+13/11/2021
+	Hata sebebi aramaya devam (unix386.s, u0.s, u8.s, u9s).
+15/11/2021
+	Hata sebebi aramaya devam (unix386.s, ux.s, u8.s)
+16/11/2021
+	Hata sebebi aramaya devam (diskio.s)
+21/11/2021
+	diskio.s'de 'int40h:' ('diskette_io:') kýsmýna 'clc' ekledim.
+	unix386.'s, u8.s ve u0.s'de hata aramaya devam.
+	(bochs'da page fault hatasý kernelin 99Eh adresinde)
+22/11/2021
+	unix386.'s, u8.s ve u0.s'de hata aramaya devam.
+22/11/2021 - v1.2
+	Hatalarý çözemediðim için tekrar Retro UNIX 386 v1.1 kernel
+	kodundan minimum deðiþiklikle geçici çözüm saðlamaya çalýþacaðým.
+	(Bundan sonraki v1.1 kodunun en az deðiþmiþ hali olacak,
+	sadece dosya sistemi uyumluluðu olacak. Bu test/geçici versiyona
+	v1.2 adýný verdim.)
+	'namei', 'iget', 'mget', 'icalc', 'access' kodlarýný deðiþtirdim.
+26/11/2021 
+	u5.s'de alloc prosedürünü (v2 free blocks map'e göre) uyarladým.
+	Yarýn alloc prosedürünü kontrol edeceðim ve free prosedürünü
+	uyarlayacaðým. (v1.1 ile v2.0 arasýnda olan kod yazýyorum.)
+27/11/2021 
+	u5.s'de 'alloc' prosedüründe kontrol ve düzeltme tamam.
+	ux.s'de 'alloc' ile ilgili eklemeler.
+	u5.s'de 'free' prosedürünün yeniden yazýlmasý tamam.
+	u0.s'de [rootdir] alanýna 1 yazýlmasý tamam.
+28/11/2021
+	sysdefs.s'ye ekleme. 
+	u6.s'de 'readi' ve 'writei' nin uyarlanmasý.
+	u5.s'de 'mget' de ufak düzeltme (gereksiz 'jc' kodunun iptali)
+	u5.s'de 'icalc' da ve 'access'de düzeltme.
+	u2.s'de runix 386 v2'nin 'sysexec' kodunun kullanýlmasý.
+	u0.s'de 'bf_init' ve 'rdev_init' de düzeltme.
+	u2.s'de 'namei' ve 'sysexec' hata kontrolü devam ediyor..
+29/11/2021
+	u8.s'de 'poke' içinde 32 bit push-pop deðiþikliði.	
+30/11/2021
+	u5.s'de 'iget' içinde düzeltme.
+	u2.s'de 'sysexec' içinde düzeltme.
+	u1.s'de 'sysret' de 'xor eax, eax' deðiþikliði.
+		'sysexit' de 'dec eax' deðiþikliði.
+04/12/2021
+	u1.s'de	'sysopen', 'sysclose', 'sysread', 'syswrite', 'getf'
+		ve 'fclose' deðiþiklikleri.
+	u0.s, u1.s, u2.s kontrolü. sysdefs.s ve ux.s'de ufak deðiþiklik.
+05/12/2021
+	u7.s'de 'iopen','iclose', 'otty', 'ctty' düzeltme/deðiþiklikleri.
+	'keyboard.s', 'video.s', 'diskio.s' dosyalarýnda ufak düzeltmeler.
+11/12/2021
+	u0.s, u1.s, u2.s, u6.s, u8.s, u9.s, sysdefs.s'de
+	hata giderme ve iyileþtirmeler ve geçici test kodlarý.
+12/12/2021
+	u1.s'de geçici test kodu ve düzeltme ile ilk 'invalid system call'
+	çaðrýsýný aldým. Bunun anlamý /etc/init çalýþýyor demek;
+	çünkü en son sistem çaðrý/fonksiyon numarasý 36 iken, 37. test
+	fonksiyonuyla sistem çaðrýsý (int 30h, ax = 37) yaptýrmýþtým,
+	'invalid system call' mesajýný görmek istiyordum, gördüm.
+	Bu durumda [u.uno] veya [p.ttyc] içinden yanlýþ deðer alýndýðý
+	anlaþýlýyor (bunlarý bypass yapýnca mesaj göründü yoksa ekranda
+	mesaj çýkmýyor, sadece sol üstte test kodu sayýsý çýkýyordu).
+	u0.s'de p.ttyc içine geçici olarak 0 atayarak problemi çözdüm.
+	Ancak p.ttyc unix386.s içindeki 'clear_bss' aþamasýnda sýfýrlanmasý
+	gerekirken içinde nasýl baþka bir sayý çýkýyor bulamadým. 'sysinit'
+	aþamasýndan önce muhtemelen hatalý bir kod o kýsmý overwrite yapýyor
+	veya 'clear_bss' çalýþmýyor.
+19/12/2021
+	u1.s'de 'sysemt' içinde 'cli' ve 'sti' instruction'larýný kaldýrdým.
+	(v1.1'deki /etc/init mesajý yazdýktan sonra protection hatasý veriyor
+	 init386.s'deki iþlem sýrasýna göre fonksiyon kontrolü yapýyorum)
+	u2.s'de 'sysintr' prosedürünü kontrol ettim, normal. u4.s'deki 'clock'
+	prosedüründe [u.intr] alaný sýfýr ise 'clock' prosedürü aktif prosesi
+	deðiþtirtmiyor. '/etc/init' multi tasking aþamasýna 'sysemt' ile
+	giriyor ama en baþta [u.intr] içine sysinit çaðrýsýyla 0 koyuyor.
+	'/etc/init' 'sysquit' üzerinde [u.quit] alanýný da sýfýrlýyor.
+	Böylece Ctrl+Break tuþlarý /etc/init'in çalýþmasýný durdurammýyor.
+	u5.'de 'access' prosedüründe yazýlabilir device dosyalarýnýn 
+	salt okunur dosya sisteminde yazma iþlemi hatasý vermemesi için
+	düzeltme yaptým.
+	u2.s'de 'namei' içinde jmp iyileþtirmesi ('namei_9:') yaptým.
+	u1.s'de 'syswrite', u6.s'de 'writei' ve 'cpass' ve 'wtty' 
+	(device için) doðru. u9.s'deki 'putc' prosedürü 'wtty' için' doðru.
+	u1.s'de 'sysread', u6.s'de 'readi' ve 'passc' ve 'rtty' 
+	(device için) doðru. u9.s'deki 'getc' prosedürü 'rtty' için' doðru.
+24/12/2021
+	u1.s'de 'sysread' ve 'syswtite' için 'rw3:' (error) kodunda düzeltme.
+	u2.s'de 'sysexec' ve 'cpass' da düzeltme. (/etc/init'in çalýþmasý için
+	yaptýðým hatalý deðiþikliði geri aldým.)
+25/12/2021
+	u5.s'de 'access' prosedüründe düzeltme (root için device r/w kontrolü).
+26/12/2021
+	u1.s ve u2.s'de (/etc/init error için) hata arama test kodlarý.
+	u2.s'deki 'sysfstat've 'sysstat' prosedürlerinde runix v2
+	dosya sistemine göre düzeltme.
+27/12/2021
+	u2.s'de 'anyi' içinde (runix v2 fs) düzeltmesi.
+31/12/2021
+	u6.s'de 'trans_addr_w' içinde 'copy_page' ile ilgili hata düzeltme.
+	'memory.s' de 'duplicate_page_directory' içinde düzeltme.
+01/01/2022 (Boðazköy)
+	u7.s'de 'otty' (ve 'ottyp') prosedürü düzeltmesi.
+	u1.s'de 'sysopen' prosedüründe binary code'u deðiþtirmeyen deðiþiklik.
+	u2.s'de 'anyi' prosedüründe binary code'u deðiþtirmeyen deðiþiklik.
+	ux.s'de binary code'u deðiþtirmeyen deðiþiklik.
+	u2.s'de 'syscreat' içinde hata düzeltme.
+	u2.s'de 'isdir' ve 'chdir' içinde runix v2 fs inode'a göre deðiþiklik.
+	u0.s'de 'sysinit' de iyileþtirme.
+	u2.s'de 'sysexec' de düzeltme.
+02/01/2022
+	unix386.s'de 'memory_init' prosedürü 32 bit register iyileþtirmeleri.
+	diskinit.s'de (trdos 386 v2'nin diskinit.s'sine göre) düzeltme yaptým.
+	unix386.s'de diskinit.s'ye göre deðiþiklik. (int 48h data alaný.)
+08/01/2022
+	u0.s kontrol edildi ve seri (COM) port kýsýmlarý iyileþtirildi.
+	u1.s'de 'syswait' içinde basit iyileþtirme.
+	u1.s'de 'sysfork' içinde düzeltme.
+	u2.s'de	'getf' prosedüründe deðiþiklik.
+	u1.s'de 'sysread' ve 'syswrite' gözden geçirildi, yanlýþ yok.
+	u1.s'de 'sysopen' içinde basit iyileþtirme.
+	u7.s'de 'iopen' kontrol edildi, 'otty' ve 'ocvt' iyileþtirildi.
+	u7.s'de 'iclose' kontrol edildi, 'ctty' ve 'ccvt' iyileþtirildi.
+	u1.s'de 'sysclose' kontrol edildi.
+	u2.s'de 'isdir' iyileþtirmesi. 'sysfstat' içinde ufak düzeltme.
+	u2.s'de 'fclose' içinde düzeltme.
+	u2.s'de 'namei' içinde iyileþtirme.
+	u2.s'de 'syschdir' içinde düzeltmeler.
+09/01/2022
+	u2.s'de 'syschmod' ve 'syschown', 'isown' ve 'maknod' kaynak kodlarý
+		 runix v2 fs'e göre deðiþtirildi.
+	ux.s'ye 'imodx' eklendi ("inode deðiþti ama file data ayný").
+	u2.s'de 'systell' içinde iyileþtirme, 'seektell' içinde deðiþiklik.
+	u1.s'ye 'syssetgid', 'sysgetgid', 'sysver' sistem çaðrýlarý eklendi.
+	u2.s'ye	'syssetgid', 'sysgetgid', 'sysver' kodlarý eklendi.
+	u2.s'de 'anyi' içinde deðiþiklik yapýldý.
+	u3.s kontrol edildi, deðiþiklik gerekmiyor.
+	u4.s kontrol edildi, deðiþiklik gerekmiyor.
+	u5.s'de	'mget' prosedüründe düzeltme yapýldý.
+	u8.s'deki 'bufaloc' kontrol edildi ve basit/ufak iyileþtirme yapýldý.
+	u8.s'deki 'wslot' kontrol edildi, doðru.
+	u8.s'deki 'dskwr', 'poke', 'diskio', 'dskrd' kontrol edildi, doðru.
+	u8.s'de 'diskio' prosedüründe ufak/basit iyileþtirme yapýldý. 
+	diskio.s'yi kontrol ettim, yanlýþ farkemedim. (Karýþýk ama doðru.)
+	u5.s'deki 'alloc', 'alloc_m' prosedüründe düzeltme yapýldý.
+	u5.s'deki 'free' prosedüründe düzeltme yapýldý.
+	u5.s'deki 'iget' ve 'icalc' prosedürlerinde düzeltme yapýldý.
+	u5.s'deki 'access' ve setimod prosedürleri doðrulandý.
+	u5.s'deki 'itrunc' ve 'imap' prosedürleri düzenlenecek.
+10/01/2022
+	u5.s'deki 'itrunc' ve 'tloop' prosedürlerini düzenledim.
+	u5.s'deki 'imap' prosedürünü düzenledim.
+	sysdefs.s'ye error kodlarý ekledim.
+	u2.s'deki 'maknod' prosedüründe deðiþiklik yaptým.
+	ux.s'ye	triple indirect ve double indirect buffer'larý ekledim.
+	ux.s'deki 'SB' ve 'file' structure'larýný 'sysdefs.s'ye taþýyarak
+	     NASM'nin BSS section'daki adreslerde yaptýðý hatayý düzelttim.
+	Bu þekilde sebebi bilinmeyen/acayip etc/init hatalarýný çözmüþ oldum.
+	(NASM kaynaklý bu hata ayný zamanda runix v2 dosya sistemi kullanan
+	 yeni kernel kodunu düzeltmeme yol açtý, hayýrlý oldu.)
+	u6.s'den ux.s'ye kadar gözden geçirmeye devam edeceðim.
+11/01/2022
+	u6.s'de gözden geçirme ve iyileþtirme tamam.
+	u7.s'de 'sysmount' prosedüründe düzeltme yaptým ancak hard diskdeki
+	      runix v2 fs içeren partition'lar için superblock adresi
+	      (sectör 1 olmayýp) farklý olabileceðinden, 'sysmount' kodunu
+	      (ileride) deðiþtirmek/geliþtirmek gerekecek. Þimdilik runix v2
+	      dosya sistemli floppy diskler için uygun.
+	u7.s'de'sysumount' prosedüründe düzeltme/deðiþiklik yaptým.
+	u7.s'de 'iopen' ve 'iclose' gözden geçirmesini tamamladým.
+	u8.'s'den devam...
+12/01/2022
+	u8.s'de 'bread' ve 'bwrite' prosedürlerinde BugFix.
+	u8.s'de 'bwslot' gözden geçirildi, açýklama eklendi.
+		'dioreg' gözden geçirildi, doðru.
+		'rfd', 'rhd', 'wfd', 'whd' gözden geçirildi, doðru.
+		'dskrd','dskwr' ve 'poke' gözden geçirildi, doðru.
+		'bufaloc' ve 'diskio' gözden geöirildi, doðru.
+	(Orijinal unix v1'den kalma buffer status kodlamalarý daha sonra
+	 yeni buffer yapýlandýrmasýnda iptal edilecek. Retro UNIX 386 v1.2
+	ve sonrasý disk io, MSDOS'da olduðu gibi direkt yapýlacak ve sonuç
+	beklenecek, yani interrupt dönüþü beklenecek. Dolayýsýyla orijinal
+	unix v1'deki gibi r/w/busy durum kodlarýna/flaglarýna gerek yok.)
+	Orijinal unix v1'den kalma status bit flaglarý þimdilik kullanýmda.
+	;
+	u9.s'de 'getc', 'putc' doðru. 'sndc' içinde iyileþtirme yaptým.
+	ux.s'de 'p.break' alaný kullanýlmýyordu, iptal ettim. Diðerleri doðru.
+	u2.s'de 'sysexec' içinde 'argc' (<32) ile ilgili düzeltme yaptým.
+	ux.s kontrol ve düzeltmeleri tamam.
+	u5.s'de 'setimod' deðiþikliði ([imodx], inode modified, file same)
+		yaptým. [imodx] ile ilgili diðer deðiþiklikleri yaptým.
+	u2.s'de 'syslink' ve 'sysunlink' içinde [imodx] deðiþikliði yaptým.
+	u7.s'de 'sysmount' da etiket/label hatasýný düzelttim.
+	sysdefs.s içinde yeni sistem çaðrýlarýný tanýmladým (37,38,39).
+		Ve 's.time' kayýtýný superblock buffer+504'e tanýmladým.
+	Böylece... Bugün..
+	Retro UNIX 386 v1.2 (Kernel v0.2.2.0) test düzenlemesi tamamlandý.
+	******************************************************************
+20/01/2022
+	(Runix v1.1 ls kodunu runix v1.2 ye uyarladým. ls1.s dosyasýnýn
+	 yeni dosya sistemine uygun hali ls2.s dosyasý. Bu þekilde directory
+	 listeleme programý için geçici/ara kodu baþarýyla çalýþtýrmýþ oldum.
+	 /etc/init'ten sonraki 'single user' modunda mevcut/harici komutlar
+	 düzgün çalýþýyor. u1.s ve u2.s'de 'syscreate', 'sysmkdir', 'ssyslink'
+	 'sysunlink' ve 'maknod' prosedürlerindeki temporary engelleri
+	 kaldýrdýktan sonra 'multi user' modunda kontrol yapacaðým.)
+21/01/2022
+	u1.s'de 'syscreate, 'sysmkdir' prosedürlerinin temporary (%if 0)
+		engellerini kaldýrdým.
+	u2.s'de	'syslink', 'sysunlink' ve 'maknod' prosedürlerinin 
+		temporary (%if 0) engellerini kaldýrdým.
+06/02/2022
+	u1.s'de 'sysstty' prosedürüne v1.1'deki gibi (yeni, 2022)
+		clear screen özelliði ekledim (dizin listesi alýnca alta inen
+		kursörü yeniden video sayfasýnýn üstüne taþýma ana amaç)
+		bunu yaparken u7.s'deki 'cttyp' de deðiþiklik gerekti.
+	u0.s'de 'ctrlbrk' prosedüründe (2022 v1.1'deki gibi) tekrarlý
+		([u.quit] = 0FFFFh ise) ctrl+brk tuþlarýný dikkate almama
+		düzeltmesi yaptým.
+	u2.s'de 'sysexec' system çaðrýsýnda ufak bir kod iyileþtirme yaptým.
+		(32 bit register'a sayý atarken, az byte kullanan kodlama)
+07/02/2022
+	video.s'de 'set_ctype' de ufak iyileþtirme.
+	u7.s'de 'sysmount'ta ufak düzeltme.
+08/02/2022
+	u7.s'de 'sysmount' düzeltmesi ('diskio' error dönüþü error kodu).
+	u8.s'de 'bread', 'bwrite', 'dskrd', 'dskwr', 'diskio' error dönüþ
+		ve error jump kodu düzeltmeleri (bread/bwrite'a dönüþ).
+	sysdefs.s'ye error kodu eklenmesi ('invalid fs/superblock').
+09/02/2022
+	u1.s'de 'syswait' kodunda ufak düzeltme/iyileþtirme.
+	u7.s'de 'otty' input açýklamasý ve 'otty', 'ctty' iyileþtirmeleri.
+10/02/2022
+	u8.s'de 'diskio' prosedürü içindeki hatalarý düzelttim. 
+	(error/stc dönüþünde gereken pop'lar olmadan return yaptýrmýþým)
+11/02/2022
+	u1.s'de 'syscreat' sistem çaðrýsý içinde önemli düzelme.
+	u7.s'de 'iopen' prosedüründe 'syscreat' ile ilgili deðiþiklik.
+	u5.s'de 'free' prosedüründe önemli düzeltme
+	u2.s'de	'fclose' prosedüründe düzeltme.
+12/12/2022
+	u8.s'de diskio prosedüründe hata düzeltme.
+14/12/2022
+	u2.s'de 'syschown' da düzeltme.
+16/02/2022
+	u9.s'de 'sysgeterr' de hata düzeltme. ('retn' yerine 'jmp sysret')
+	******************************************************************
+21/02/2022
+	Retro UNIX v1.1 'video.inc' (daha yeni) dosyasýný 'video.s' olarak
+	kayýtladým. (v1.2 kernelde kullanýlan dosya adý 'video.s')
+	'clock' (clock386.s) programýnda sadece video page 0'da oluþan
+	kursör pozisyon hatasýný düzeltmeye çalýþýyorum.
+22/02/2022
+	u1.s'de 'sysstty' ve 'sysgtty' içinde düzeltme yaptým.
+	   (u7.s'de 'ottyp' içinde ebx deðeri deðiþerek dönüþ olduðu için)
+	u7.s'de 'ottyp' içinde düzeltme yaptým.
+23/02/2022
+	u7.s'de	'otty' ve 'ottys' düzeltmesi yaptým.
+	u1.s'de 'sysemt' de iyileþtirme/düzeltme yaptým. 
+		(rtc/timer demolarýnýn da disable/enable yapýlmasý)
+	u1.s'de	'sysstty' içinde 'wttyc' yi ayrý bir prosedüre dönüþtürdüm.
+		('sysemt' içinden video page 6 ve 7'nin temizlenmesi)
+	u1.s'de 'sysmdate' sistem çaðrýsýnda dosya modifikasyon zamaný
+		için unix epoch	time'ý/zamanýný programdan özel olarak
+		girme deðiþikliði yaptým (ecx input).
+	u0.s'de 'sysinit' içinde 's.time' deðerini sb0 (root disk sb)
+		 yüklendikten sonra kayýtlacak þekilde deðiþiklik yaptým.
+		(Root diskin superblock buffer'ý yüklenince 's.time' deðeri
+		 overwrite olmayacak.)
+	keyboard.s'de 'keyb_int' içinde 32 bit inst. iyileþtirmesi yaptým.
+	video.s'de 'set_cpos' ve 'position' (ve pasif/eski 'scroll_up') 
+		prosedürleri içinde iyileþtirme yaptým.
+	unix386.s'de 'rtc_int' handler'ýnda video sayfasýna (vide page 7)
+		tarih ve zaman yazdýran demoyu 'sysemt' içinden 
+		devre dýþý býrakýp, sayfayý login için temizlemeye
+		ve multi tasking koþullarýný iyileþtirmeye olanak veren
+		deðiþikliði yaptým. (rtc demo single user modunda aktif).
+27/02/2022
+	video.s'de 'set_cpos' prosedüründe (ufak) deðiþiklik.
+	ux.s'de kullanýlmayan 'p.waitc' iptal edildi (kaldýrýldý).
+	u4.s'de 'wakeup' ve 'sleep' prosedürlerinde 'p.waitc' deðiþikliði.
+	u1.s'de 'sysfork' içinde ('p.ttyc' ile ilgili) BugFix
+		ve kullanýlmayan 'p.waitc' resetleme deðiþikliði/iptali.
+01/03/2022
+	u2.s'de 'systell' içinde ufak (tekrarlý iþlemi silerek) düzeltme.
+02/03/2022
+	u1.s'de	'sysclose' içinde düzeltme (bugfix).
+	(giriþte eax'i kullanan 'fclose' yerine ebx'i kullanan '_fclose')
+	u7.s'de 'otty' içinde ufak düzeltme.
+03/03/2022
+	u7.s'de	'ottyp' içinde ufak düzeltme.
+09/03/2022
+	u6.s'de 'readi' ve 'write' içinde iyileþtirme.
+	u8.s'de 'dskwr'içinde u3.s'deki 'clear' prosedürü ve u5.s'deki
+		'mget_w' prosedürünün 'mget_8:' kýsmý ile ilgili düzeltme
+		 'mget_11:'e doðru [ebx] -buffer data adresi- ile jmp.
+		 (Düzeltmeden sonra, 'clear'/'dskwr' dönüþünde ebx
+		 buffer data adresini içeriyor. Düzeltmeden önce,
+		 ebx buffer header adresini gösteriyordu. 'mget_8:'de
+		 düzeltme gerekmedi, açýklama yazdým.)
+	u5.s'de	'mget' ('mget_r' ve 'mget_w') prosedüründe iyileþtirme.
+		(ebx 'mget dönüþünde kullanýlmadýðý için mevcut sektörler
+		için iþaret olsun diye ebx'i sýfýrlamaya gerek yok.)
+	u1.s'de 'syscreat' kodunu alt prosedürleriyle kontrol ettim,
+		hata yok/farkedemedim.
+	u5.s'deki 'free' prosedüründe (free blocks artýrma) düzeltme.
+11/03/2022
+	u2.s'de 'syschown' içinde 'set user id on execution' koþulu
+	    düzeltmesi. (Bu durumda kullanýcýnýn kendine ait olmayan
+	    dosyanýn sahibini deðiþtiremeyeceði þeklinde düzeltme yaptým.
+	    Aslýnda orijinali öyleydi ama yanlýþlýkla terse çevirmiþim.)
+	u2.s'de 'isown'	prosedüründe [u.gid] = [i.gid] koþulunu gözeten
+	    kýsmý kaldýrdým; çünkü dün ve bugünkü çalýþmamda unix v5-v7
+	    kernel'in tekil (farký gruplarda tekrarlamayan) user id/num
+	    (u.uid) öngördüðünü/düzenlediðini farkettim. Buna göre, 
+	    User id [u.uid] ile dosyanýn owner's id [i.uid] ayný ise,
+	    ayrýca bir group id ([u.gid] = [i.gid]) kontrolüne gerek yok.
+	    (Orijinal unix kernelindeki 'chown' prosedürüne ve orijinal
+	    'mkdir.s' kaynak koduna bakýlýrsa, kullanýcý kodu/numarasý
+	    ayný ise grup kodu/numarasý kontrol edilmiyor.)
+	u2.s'de 'getgid' ve 'getuid' prosedürlerinde düzeltme/deðiþiklik.
+	u2.s'de 'maknod' içinde 'wslot' çaðrýsý dönüþünde ebp deðeri
+	    deðiþiyordu. ebp'nin deðiþmemesi gerektiði için, 'maknod'
+	    prosedürü içine 'wslot'tan hemen önce ve sonra, ebp için
+	    push/pop ekledim.
+12/03/2022
+	u5.s'de 'imap' prosedürüne açýklama ekledim.
+	u2.s'de	'anyi' prosedüründe modified regs açýklama düzeltmesi.  	    			 		
+	u2.s'de 'fclose'da 'iclose' için inode number koruma düzeltmesi.
+	u1.s'de 'syscreat' içinde hata düzeltme. ('syscreat' dosya
+		oluþturma sistem çaðrýsý, dosya zaten mevcut ise, 
+		dosyayý sýfýrlýyor/buduyor. Mevcut dosyanýn içeriðini
+		budamak için çaðrýlan 'itrunc_1' prosedürü eax'deki
+		inode number'ý deðiþtirdiði için, push/pop gerekiyordu.)
+	u2.s'de	'maknod' içinde ve 'anyi' içinde önemli düzeltmeler.
+13/03/2022
+	u5.s'de 'access' prosedüründe (unix v5-v7 fio.c'deki access'e
+		uyan) deðiþiklik. (User ID ayný ise, group ID dikkate
+		alýnmaz; çünkü user ID'ler tekdir. Asýl olan user ID.)
+	u1.s'de 'sysmkdir' içinde root'a ve parent dir'nin sahibine
+		alt dizin oluþturma izini veren deðiþiklik.
+		(Parent directory owner'ý ile current user ayný olmalý
+		veya current user root/superuser olmalý koþulu.
+		Orijinal unix v5-v7 sub directory oluþturma iznini
+		sadece superuser'a veriyor. Benim yaptýðým deðiþiklik
+		üst/ana dizin sahibine -effective ve real user id ayný
+		olmasý þartýyla- mkdir izini vermekle birlikte, ayrýca
+		üst/ana dizinin salt okunur olmamasý gerekiyor.
+		Sahibi için salt okunur olan bir dizin/directory
+		içinde alt dizin oluþturulamýyor.)
+	u2.s'de	'isdir' prosedüründe dizin sahibine link/unlink izini
+		veren deðiþiklik yaptým. Yukarýda (Bugün biraz önce)
+		'sysmkdir' içinde yaptýðým deðiþikliðin amacý ile ayný.
+		Kullanýcý 'sysmkdir' ile yeni dizin oluþturduðu zaman,
+		devamýnda '.' ve '..' directory entry'lerini syslink
+		ile mevcut dizinlere baðlayabilecek. Onun izni. Ayrýca
+		'rmdir' iþlemi için 'sysunlink' kullanýlýyor; dizin
+		sahibi oluþturduðu dizini -boþ ise- silebilecek. Dizin
+		sahibi kontrolü yaparken hem efektif hem de gerçek/reel
+		kullanýcý kimliði/numarasý (effective and real used id)
+		kontrol ediliyor. Böylece dizinle ilgili link/unlink
+		iþlemlerini login yapan kullanýcý dizinin gerçek sahibi
+		ise yapabiliyor. 
+		((Bu þekilde çok kullanýcý kontrollerinin amacý ileride
+		Retro UNIX kaynak kodunu geliþtirirken ve türev iþletim
+		sistemi kernel'i yazarken, çok kullanýcýlý (multi user,
+		multi tasking) iþletim sistemi olma kriterlerine uymak,
+		gerçekten çok kullanýcýyla çalýþan dosya sistemlerini
+		ve run time sistemi oluþturabilmek, bunun için unix'ten
+		türettiðim retro unix kernelinin kaynak kodu temelini
+		saðlam/hazýr tutmak.))
+	u2.s'de	'anyi' prosedüründe düzeltme. (fsp tablosundaki dosya.)
+		'chown' prosedüründe ([i.gid] ile ilgili) düzeltme.
+21/03/2022
+	u0.s'de	'rdev_init' prosedüründe hard disk masterboot sektörü
+		yükleyip, runix v2 partition'u bulup, boot sektörün
+		adresini gören ve onu kullanarak süperblok'u yükleyen
+		deðiþiklileri (düzeltmeleri) yaptým. Hardisk süperbloku
+		kontrol edilmiyor ama masterboot partition tablosunda
+		runix v2 partition bulunamaz ise default SB adresinin
+		sektör 1 olduðu varsayýlarak sb yükleniyor. (Burada
+		süperblok yanlýþ olursa /etc/init yüklenemeyeceði için
+		etc/init hatasý alýnacak. O nedenle ayrýca bir kontrol
+		eklemedim.) Masterboot yüklenirken hata alýnýrsa veya
+		süperblok yüklenirken disk okuma hatasý alýnýrsa, bu
+		hata yazýlarak (bir tuþa basýldýktan sonra) reboot
+		yaptýrýlýyor. Bugünkü aþamada kernelin en son hali
+		hard diskten etc/init'i yükletip çalýþtýrabiliyor ama
+		multiuser modunda etc/init (init8 dosyasý) aþamasýný
+		geçerken takýlýyor. /tmp/umtp'ye yazmayan init7'yi
+		/etc/init olarak kullanýrsam shell'e kadar geliyor
+		ve shell de doðru çalýþýyor. Ama dosyaya/dizine yazan
+		mkdir gibi program çalýþtýrýnca dosya sistemi bozuluyor
+		(örneðin bin dizinini bozuluyor). /etc/init /tmp/utmp'ye
+		yzacak þekilde þekilde seçilirse (init8) /tmp/utmp'ye
+		sýnýr dýþý (inode sayýsýný geçen) inode numarasý veriyor.
+		Single user modunda takýlma olmadan shell'e geçiyor
+		ve oradan login çalýþtýrýlýrsa, doðru çalýþýyor.
+		Dosyaya veya dizine yazan komut kullanýlýrsa, dosya
+		sistemine hasar veriyor. 	
+	ux.s'de	Masterboot buff header ve buff (data) yeri oluþturdum.
+
+26/03/2022
+	u5.s'de 'tloop' prosedüründe düzeltme (dönüþte deðeri deðiþen
+		edx'in -level numarasýnýn- push, pop ile korunmasý).
+  		'imap' prosedüründe ufak düzeltme/iyileþtirme.
+	u2.s'de	'anyi' prosedürü sonunda iyileþtirme (kod kýsaltma).
+
+12/04/2022
+	u5.s'de 'free' prosedürü içinde düzeltme/bugfix.
+		(ebx süperblok buffer adresini gösteriyor iken,
+		'dskrd' sonrasýnda free blocks map sektörünün/blokunun 
+		buffer data adresini gösteriyordu; ebx deðiþmemiþ gibi
+		iþlem yapýlýyordu ve dolayýsýyla 'free' iþlemi
+		süperblok'un free blok sayýsý alanýný bozuyordu.
+		Push ve pop kullanarak ebx'in tekrar süperblok buffer
+		adresini göstermesini saðladým. 'alloc prosedüründe
+		ebx korunuyorken 'free' içinde korumayý unutmuþtum.)
+		Bu düzeltme 'itrunc' prosedürünü de düzeltmiþ oluyor.
+18/04/2022
+	u1.s'de 'sysopen' içinde düzeltme (fsp'de yeni kayýot açýlýnca
+		open count = 1 oluyortdu, = 0 olarak düzettim. Open count
+		sadece sysfork tarafýndan -child proesesler için-
+		artýrýlýyor.) Böylece 'rmdir' için 'anyi' içindeki
+		(ve ayrýca 'fclose' içindeki) yanlýþ dallanmayý önledim.
+		(('rmdir' kaynak kodu içindeki 'unlink' iþlemlerinden
+		sonra free inodes, free blocks deðerlerinin yanlýþ çýkma
+		sebebini araþtýrýrken -'anyi' doðru çalýþmýyordu-
+		dizin silerken doðru çalýþan v1.1 ile yanlýþ çalýþan
+		v1.2 arasýndaki 'sysopen' farkýnýn 'open count' deðeri
+		olduðunu anladým ve 'open count' ile ilgili 'jns'
+		koþullu dallanmasýnýn, open count deðerinin 1 deðil,
+		0 olmasý durumunda doðru olacaðýný gördüm
+		ve ona göre düzelttim.))
+
+ 	*******************************************************************
+	-- Retro UNIX 386 v1.2, Kernel v0.2.2.0 burada tamamlanmýþ oldu. --
+	-- bundan sonraki düzeltme/deðiþiklikler Kernel V0.2.2.1 olacak. --
+	*******************************************************************

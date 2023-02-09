@@ -1,0 +1,82 @@
+Retro UNIX 386 v2 için kernel programlama/geliþtirme notlarý...
+(Erdoðan Tan).. Tarih sýrasýna göre günlük taslak notlar.
+------------------------------------------------------------------------------
+(Yapýlmýþ ve yapýlacak iþlemleri/deðiþiklikleri açýklamak ve hatýrlamak için.)
+
+benioku2.txt'den devam..
+(O dosyanýn sonunda Retro UNIX v1.2, Kernel v0.2.2.1 tamamlanmýþ oldu)
+
+..burada yazdýklarým Retro UNIX v1.2, Kernel v0.2.2.2'in geliþtirme notlarý.
+
+11/06/2022'de....
+
+1) 'keyboard.s' dosyasý kontrolü ve 'KB_INT_1' içinde ufak (short jmp) düzeltme.
+2) 'kybdata.s' dosyasýnda 'K8:' tablosunda PC-XT 286 BIOS'a göre ufak düzeltme.
+3) 'sysdefs.s' dosyasýnda NBUF (buffer) sayýsýný 6'dan 16'ya çýkardým.
+
+12/06/2022'de...
+
+1) u6.s'de 'writei' içinde syswrite'i 0 character count ile çaðýrýnca lpr (LPT)
+   inode'u ise (LPT1) printer status ('lpr_stat' üzerinden) döndürecek þekilde
+   ufak deðiþiklik.
+2) u6.s'de 'wlpr' prosedürü LPT1'e istenen sayýda karakterleri 'cpass'
+   kullanarak yazýyor. Kod MSDOS 3.3 bios'undaki printer driver (PRN$WRIT)
+   kodundan deðiþtirme.
+3) u6.s'de 'lpr_stat' prosedürü printer'ýn durumunu döndürüyor/veriyor.
+   Kod MSDOS 3.3 bios'undaki printer driver (PRN$STAT) kodundan deðiþtirme. 
+4) u9.s'de IBM PC-AT BIOS v3 (PRT.ASM) kaynak kodundan (INT 17h kodundan)
+   uyarlarma int17h prosedürünü yazdým. Paralel porttan yazdýma düþük seviye
+   (donaným düzeyi) kodu. Sadece LPT1 (378h) protuna göre basitleþtirdim.
+   Bu kod write, status ve init kýsmýndan oluþuyor. Printer initialization
+   kýsmýný u7.s'de 'sysopen' ile çalýþtýracak þekilde düzenledim.
+   Hata dönüþünde yeniden denemeden önce bekleme süresi için original PC-AT
+   bios kodu yerine 1999 yýlýnda yazýlmýþ award bios kodundan, printer 
+   kontrolünde kullanýlan (refresh süresine baðlanmýþ, 30 mikro saniye 
+   temelinde döngü sayýsý kullanýlan) bekleme/geciktirme (delay) yöntemini
+   kullandým. (Tekrar sayýsý ve her br deneme için bekleme süresi
+   386 bios'una göre.)			
+5) u7.s'de /dev/lpr için 'ejec' ('lpr_init') initialization kodunu yazdým.
+   'sysopen' ile '/dev/lpr' (inode 16) açýlýnca )'iopen' içinden) 'ejec' 
+   initialization kodu çaðrýlýyor. 'iopen' içinde 'sysclose' için herhangi
+   bir iþlem yapýlmýyor. Diðer ayrýntýlarý yukarýda (4'deki) gibi.
+6) 'sysdefs.s' içine olasý printer hata kodlarýný ekledim.
+   Hata kodlarý MSDOS 3.3'deki gibi, time_out, out of paper, io error, busy 	
+
+7) Printerdan sayfa(lar) yazdýrmak için..
+   'syswrite' þu þekilde kullanýlabilecek:
+
+	sys	_write, ebx, ecx, edx
+	
+	ebx = 'sysopen' den dönüþteki file descriptor
+	ecx = kullanýcýnýn (programýn) yazdýrma buffer'ý/tamponu
+	edx = yazdýrýlacak karakter sayýsý (yazdýrma iþlemi, boþ karakter de
+	      yazdýrýlsa edx'deki sayý kadar karakter yazýnca tamamlanacak).
+	
+	Yazdýrma hatasý olmazsa...
+	Dönüþte: (cf=0)
+		eax = yazdýrýlan karakter sayýsý
+   	Yazdýma hatasý olursa...
+	Dönüþte: (cf=1)
+		eax = hata kodu ('sysdefs.s' içinde tanýmlanmýþ kodlardan)
+		edx = yazdýrýlan karakter sayýsý (istenilenden az)
+
+	syswrite sistem çaðrýsý edx = 0 ile yapýlýrsa, eax'de printer status
+	döner (IBM PC-AT ROMBIOS printer status flag AH'de, error code AL'de)
+
+14/06/2022'de...
+
+shell'de '>' ile baþka bir ekrana (tty'ye) yönlendirme yapýldýðý zaman,
+u9.s'deki putc' prosedürünün dallandýðý 'write_tty' prosedürünün en son
+'set_cpos' aþamasýnda aktif ekran sayfasý kýyaslamasý yaparken 
+(aktif ekran index -pseudo tty- numarasý yazmanýn yönlendirildiði ekranýn
+-pseudo tty'nin- index numarasýndan küçük olduðu için), 'cmp' iþlemci komutu
+sonucunda cf = 1 olarak dönüyordu. Bu da 'putc' prosedürünün (u6.s'deki
+'wtty_1' de) carry/hata ile dönmesi dolayýsýyla, yönlendirilmiþ ekranda 
+'sleep' durumuna yol açýyordu; yönlendirilmiþ ekran aktif ekran olmadýkça da
+'sleep' durumundan çýkýlamýyordu. 'putc'nin pseduo tty'ye yazdýktan sonra
+carry ile dönmesini, dönüþe 'clc' koyarak önledim.
+
+***
+Retro UNIX 386 v1.2 (Kernel v0.2.2.2) deðiþiklik/düzeltme notlarý sonu.
+***	
+						 

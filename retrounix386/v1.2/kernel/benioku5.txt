@@ -1,0 +1,24 @@
+Retro UNIX 386 v2 için kernel programlama/geliþtirme notlarý...
+(Erdoðan Tan).. Tarih sýrasýna göre günlük taslak notlar.
+------------------------------------------------------------------------------
+(Yapýlmýþ ve yapýlacak iþlemleri/deðiþiklikleri açýklamak ve hatýrlamak için.)
+
+benioku4.txt'den devam..
+(O dosyanýn sonunda Retro UNIX v1.2, Kernel v0.2.2.3 tamamlanmýþ oldu)
+
+..burada yazdýðým Retro UNIX v1.2, Kernel v0.2.2.4'ün geliþtirme notu.
+
+27/12/2022'de ...
+
+*) Kernel'e toplam ve kullanýlabilir/free memory/bellek miktarýný
+   (4096 byte'lýk page/sayfa sayýsý olarak) döndüren 'sysmemory' sistem
+   çaðrýsýný ekledim. 		
+   ebx = 0 ise toplam bellek miktarýný, ebx = 1 ise free bellek miktarýný
+   eax'de döndürüyor. ebx > 1 ise invalid function (geçersiz fonsiyon)
+   olarak, eax=1 ve cf=1 olarak dönüyor.			
+
+***
+Retro UNIX 386 v1.2 (Kernel v0.2.2.4) deðiþiklik/düzeltme notlarý sonu.
+***
+(Retro UNIX 386 v1.2 burada/bugün -27/12/2022 günü- tamamlanmýþ oldu.)
+***		 
