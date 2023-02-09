@@ -1,0 +1,1096 @@
+Microsoft (R) Macro Assembler Version 6.14.8444		    02/26/22 18:30:29
+clock2.asm						     Page 1 - 1
+
+
+				; ****************************************************************************
+				;
+				; CLOCK.ASM - print current date & time (Retro Unix 8086 v1 - sample program)
+				; ----------------------------------------------------------------------------
+				;
+				; RETRO UNIX 8086 (Retro Unix == Turkish Rational Unix)
+				; Operating System Project (v0.1) by ERDOGAN TAN (Beginning: 11/07/2012) 
+				; 1.44 MB Floppy Disk 
+				;
+				; [ Last Modification: 26/02/2022 ]
+				;
+				; Derivation from UNIX Operating System (v1.0 for PDP-11) 
+				; (Original) Source Code by Ken Thompson (1971-1972)
+				; <Bell Laboratories (17/3/1972)>
+				; <Preliminary Release of UNIX Implementation Document> (Section E.12)
+				;
+				; ****************************************************************************
+				; CLOCK2.ASM (26/02/2022)
+				; CLOCK1.ASM (17/01/2014-20/01/2014)
+				; CLOCK0.ASM (12/12/2013) 
+				;
+				; 26/02/2022
+				; Assembler: MASM 6.14
+				; 	masm clock.asm, clock.obj, clock.lst
+				;	link /t clock.obj
+				;
+
+				.8086
+
+				; UNIX v1 system calls
+ = 0000				_rele 	equ 0
+ = 0001				_exit 	equ 1
+ = 0002				_fork 	equ 2
+ = 0003				_read 	equ 3
+ = 0004				_write	equ 4
+ = 0005				_open	equ 5
+ = 0006				_close 	equ 6
+ = 0007				_wait 	equ 7
+ = 0008				_creat 	equ 8
+ = 0009				_link 	equ 9
+ = 000A				_unlink	equ 10
+ = 000B				_exec	equ 11
+ = 000C				_chdir	equ 12
+ = 000D				_time 	equ 13
+ = 000E				_mkdir 	equ 14
+ = 000F				_chmod	equ 15
+ = 0010				_chown	equ 16
+ = 0011				_break	equ 17
+ = 0012				_stat	equ 18
+ = 0013				_seek	equ 19
+ = 0014				_tell 	equ 20
+ = 0015				_mount	equ 21
+ = 0016				_umount	equ 22
+ = 0017				_setuid	equ 23
+ = 0018				_getuid	equ 24
+ = 0019				_stime	equ 25
+ = 001A				_quit	equ 26	
+ = 001B				_intr	equ 27
+ = 001C				_fstat	equ 28
+ = 001D				_emt 	equ 29
+ = 001E				_mdate 	equ 30
+ = 001F				_stty 	equ 31
+ = 0020				_gtty	equ 32
+ = 0021				_ilgins	equ 33
+ = 0022				_sleep	equ 34 ; Retro UNIX 8086 v1 feature only !
+
+				sys macro syscallnumber, arg1, arg2, arg3
+
+				    ; Retro UNIX 8086 v1 system call.
+
+				    ifnb <arg1> 	
+				      mov bx, arg1
+				    endif
+				    
+				    ifnb <arg2> 	
+				      mov cx, arg2
+				    endif
+
+				    ifnb <arg3> 	
+				      mov dx, arg3
+				    endif
+				     			
+				    mov ax, syscallnumber	
+				    int 20h	
+				   
+				    endm
+
+				; Retro UNIX 8086 v1 system call format:
+				; sys systemcall (ax) <arg1 (bx)>, <arg2 (cx)>, <arg3 (dx)>
+
+
+ 0000				code   	SEGMENT PUBLIC 'CODE'
+				        assume cs:code,ds:code,es:code,ss:code
+
+ 0000				start_code:
+					sys	_write, 1, dt_txt, dt_size
+ 0000  BB 0001		     1	      mov bx, 1
+ 0003  B9 024C R	     1	      mov cx, dt_txt
+ 0006  BA 0018		     1	      mov dx, dt_size
+ 0009  B8 0004		     1	    mov ax, _write	
+ 000C  CD 20		     1	    int 20h	
+					;jc	short terminate
+					sys	_gtty, 0, 1 ; get console tty, cursor position
+ 000E  BB 0000		     1	      mov bx, 0
+ 0011  B9 0001		     1	      mov cx, 1
+ 0014  B8 0020		     1	    mov ax, _gtty	
+ 0017  CD 20		     1	    int 20h	
+					;jc	short terminate
+ 0019  A2 0265 R			mov	byte ptr [ttynum], al
+ 001C  B4 07				mov	ah, 7
+ 001E  38 E0				cmp	al, ah ; cmp al, 7 
+ 0020  76 06				jna	short @f
+					;mov	byte ptr [lf_b], al ; 7 = beep
+					; 26/02/2022
+ 0022  88 26 024D R			mov	byte ptr [lf_b], ah ; 7 = beep
+ 0026  EB 04				jmp	short clk0
+ 0028				@@:
+ 0028  89 1E 024A R			mov 	word ptr [cursor_pos], bx ; cursor position
+ 002C				clk0:
+					; 26/02/2022
+					;push	bx ; 0, hw
+					;push	cx ; 0, lw
+					sys 	_time
+ 002C  B8 000D		     1	    mov ax, _time	
+ 002F  CD 20		     1	    int 20h	
+					; DX:AX = Unix epoch time
+					;pop	cx ; previous time, lw
+					;pop	bx ; previous time, hw
+ 0031  3B C1				cmp	ax, cx
+ 0033  75 04				jne	short clk1
+ 0035  3B D3				cmp	dx, bx
+ 0037  74 65				je	short clk4
+ 0039				clk1:
+ 0039  52				push	dx ; current time, hw
+ 003A  50				push	ax ; current time, lw
+ 003B  E8 006A				call	ctime
+					;sys	_write, 1, cbuf, 25
+					; 26/02/2022
+					sys	_write, 1, cbuf, 26
+ 003E  BB 0001		     1	      mov bx, 1
+ 0041  B9 0230 R	     1	      mov cx, cbuf
+ 0044  BA 001A		     1	      mov dx, 26
+ 0047  B8 0004		     1	    mov ax, _write	
+ 004A  CD 20		     1	    int 20h	
+					sys	_gtty, 0, 0
+ 004C  BB 0000		     1	      mov bx, 0
+ 004F  B9 0000		     1	      mov cx, 0
+ 0052  B8 0020		     1	    mov ax, _gtty	
+ 0055  CD 20		     1	    int 20h	
+ 0057  0B DB				or	bx, bx
+ 0059  74 15				jz	short clk2
+					sys	_read, 0, chr, 1
+ 005B  BB 0000		     1	      mov bx, 0
+ 005E  B9 0264 R	     1	      mov cx, chr
+ 0061  BA 0001		     1	      mov dx, 1
+ 0064  B8 0003		     1	    mov ax, _read	
+ 0067  CD 20		     1	    int 20h	
+ 0069  80 3E 0264 R 1B			cmp	byte ptr [chr], 1Bh ; ESC key
+ 006E  74 27				je	short clk3 ; exit
+ 0070				clk2:
+ 0070  80 3E 0265 R 08			cmp	byte ptr [ttynum], 8
+ 0075  72 10				jb	short clk_pt
+					sys	_write, 1, dt_txt, dt_size
+ 0077  BB 0001		     1	      mov bx, 1
+ 007A  B9 024C R	     1	      mov cx, dt_txt
+ 007D  BA 0018		     1	      mov dx, dt_size
+ 0080  B8 0004		     1	    mov ax, _write	
+ 0083  CD 20		     1	    int 20h	
+ 0085  EB 0C				jmp	short @f
+ 0087				clk_pt:
+ 0087  8B 16 024A R			mov	dx, word ptr [cursor_pos]
+ 008B  B9 FFFF				mov	cx, 0FFFFh ; set cursor position only
+					; 26/02/2022 (bx = 0)
+					;xor 	bx, bx ; set for console tty
+					sys	_stty
+ 008E  B8 001F		     1	    mov ax, _stty	
+ 0091  CD 20		     1	    int 20h	
+ 0093				@@:
+ 0093  59				pop	cx ; current -> previous time, lw
+ 0094  5B				pop	bx ; current -> previous time, hw	
+ 0095  EB 95				jmp	short clk0 
+ 0097				clk3:
+ 0097  58				pop	ax
+ 0098  58				pop	ax
+ 0099				terminate:
+					sys	_exit
+ 0099  B8 0001		     1	    mov ax, _exit	
+ 009C  CD 20		     1	    int 20h	
+ 009E				clk4:
+ 009E  90				nop
+ 009F  90				nop
+ 00A0  90				nop
+ 00A1  90				nop
+				        ; 26/02/2022
+ 00A2  33 C0				xor	ax, ax
+ 00A4  40				inc	ax
+ 00A5  48				dec	ax
+ 00A6  EB 84				jmp	short clk0	
+
+				include ctime.inc
+			      C ; ****************************************************************************
+			      C ;
+			      C ; CTIME.INC  (Retro Unix 8086 v1 - /bin/ls - list file or directory)
+			      C ; ----------------------------------------------------------------------------
+			      C ;
+			      C ; RETRO UNIX 8086 (Retro Unix == Turkish Rational Unix)
+			      C ; Operating System Project (v0.1) by ERDOGAN TAN (Beginning: 11/07/2012) 
+			      C ; Retro UNIX 8086 v1 - /bin/ls file
+			      C ;
+			      C ; [ Last Modification: 26/02/2022 ]
+			      C ;
+			      C ; Derivation from UNIX Operating System (v1.0 for PDP-11) 
+			      C ; (Original) Source Code by Ken Thompson (Bell Laboratories, 1971-1972)
+			      C ;
+			      C ; ****************************************************************************
+			      C ;
+			      C ; Derived from 'ctime.c' file of original UNIX v5 (usr/source/s3/ctime.c)
+			      C ;
+			      C ; LS0.ASM, 19/11/2013 - 24/11/2013
+			      C ; include ctime.inc
+			      C ;
+			      C ; ****************************************************************************
+			      C ; ctime1.asm (26/02/2022)
+			      C ; ctime0.asm (28/11/2013)
+			      C 
+			      C ; .8086
+			      C 
+			      C ;timezone equ 5*60*60
+			      C 
+			      C 
+ 00A8			      C ctime:  ; ctime(at)
+			      C 	; int *at;
+			      C 	; {
+			      C 	; 	return(asctime(localtime(at)));
+			      C 	; }
+			      C 
+			      C 	; DX:AX = unix epoch time (in seconds)
+			      C 
+			      C 	;call localtime
+			      C 	;call asctime
+			      C 
+			      C 	;retn
+			      C   
+ 00A8			      C localtime:
+			      C 	; localtime(tim)
+			      C 	; int tim[];
+			      C 	; 	{
+			      C 	;		register int *t, *ct, dayno;
+			      C 	;	int daylbegin, daylend;
+			      C 	;	int copyt[2];
+			      C 	;	t = copyt;
+			      C 	;	t[0] = tim[0];
+			      C 	;	t[1] = tim[1];
+			      C 	;	dpadd(t, -timezone);
+			      C 	;	ct = gmtime(t);
+			      C 	;	dayno = ct[YDAY];
+			      C 	;	if (nixonflg && (ct[YEAR]>74 || ct[YEAR]==74 && (dayno > 5 ||
+			      C 	;	    dayno==5 && ct[HOUR]>=2))) {
+			      C 	;		daylight =| 1;
+			      C 	;		daylbegin = -1;
+			      C 	;		daylend = 367;
+			      C 	;	} else {
+			      C 	;		daylbegin = sunday(ct, 119);	/* last Sun in Apr */
+			      C 	;		daylend = sunday(ct, 303);	/* last Sun in Oct */
+			      C 	;	}
+			      C 	;	if (daylight &&
+			      C 	;	    (dayno>daylbegin || (dayno==daylbegin && ct[HOUR]>=2)) &&
+			      C 	;	    (dayno<daylend || (dayno==daylend && ct[HOUR]<1))) {
+			      C 	;		dpadd(t, 1*60*60);
+			      C 	;		ct = gmtime(t);
+			      C 	;		ct[ISDAY]++;
+			      C 	;	}
+			      C 	;	return(ct);
+			      C 	;	}
+			      C 
+			      C 	;sub	ax, timezone	
+			      C 	;sbb	dx, 0
+			      C 	
+			      C 	;push	dx
+			      C 	;push	ax
+			      C 
+ 00A8  E8 005D		      C 	call 	gmtime
+			      C ; if (nixonflg && (ct[YEAR]>74 || ct[YEAR]==74 && (dayno > 5 ||
+			      C ;     dayno==5 && ct[HOUR]>=2))) {
+			      C 	;cmp	byte ptr [nixonflg], 0
+			      C 	;jna	short lt1
+			      C 	;cmp	word ptr [year], 1974
+			      C 	;jb	short lt1
+			      C 	;ja	short lt0
+			      C 	;cmp	word ptr [yday], 5
+			      C 	;jb	short lt1
+			      C 	;ja	short lt0 
+			      C 	;cmp	word ptr [hour], 2
+			      C 	;jb	short lt1
+			      C ; nixonflag > 0
+			      C ;lt0:
+			      C 	;mov	word ptr [daylight], 1
+			      C 	;mov	word ptr [daylbegin], -1
+			      C 	;mov	word ptr [daylend], 367
+			      C ;	;jmp	short lt2
+			      C 
+			      C ; } else {
+			      C ;lt1:
+			      C ;	mov	cx, 119
+			      C ;	call	sunday ; sunday(ct, 119); /* last Sun in Apr */
+			      C ;	mov	word ptr [daylbegin], cx
+			      C ;	mov	cx, 303
+			      C ;	call	sunday ; sunday(ct, 303); /* last Sun in Oct */	
+			      C ;	mov	word ptr [daylend], cx
+			      C ;lt2:
+			      C ; if (daylight &&
+			      C ;    (dayno>daylbegin || (dayno==daylbegin && ct[HOUR]>=2)) &&
+			      C ;    (dayno<daylend || (dayno==daylend && ct[HOUR]<1))) {
+			      C 
+			      C ;	pop	ax
+			      C ;	pop	dx
+			      C 
+			      C 	;cmp	byte ptr [daylight], 0
+			      C 	;jna	short lt5
+			      C 	
+			      C 	;mov	cx, word ptr [yday]
+			      C 
+			      C 	;cmp	cx, word ptr [daylbegin]
+			      C 	;jb	short lt5
+			      C 	;ja	short lt3
+			      C 	;cmp	word ptr [hour], 2
+			      C 	;jb	short lt5
+			      C 	;jmp	short lt4
+			      C ;lt3:
+			      C 	;cmp	cx, word ptr [daylend]
+			      C 	;jb	short lt4
+			      C 	;ja	short lt5
+			      C 	;cmp	word ptr [hour], 1
+			      C 	;jnb	short lt5
+			      C ;lt4:
+			      C 	;add	ax, 1*60*60
+			      C 	;adc	dx, 0
+			      C 	;call	gmtime
+			      C 	;inc	word ptr [isday]
+			      C ;lt5:
+			      C ;	}
+			      C ;	return(ct);
+			      C ;	}
+			      C 
+			      C 	;retn
+			      C 
+			      C 	; 26/02/2022 (Retro UNIX 8086 v1, 2022 modification)
+ 00AB			      C asctime:
+			      C 	; asctime(t)
+			      C 	;int *t;
+			      C 	;{
+			      C 	;	register char *cp, *ncp;
+			      C 	;	register int *tp;
+			      C 	;
+			      C 	;	cp = cbuf;
+			      C 	;	for (ncp = "Day Mon 00 00:00:00 1900\n"; *cp++ = *ncp++;);
+			      C 	;	ncp = &"SunMonTueWedThuFriSat"[3*t[6]];
+			      C 	;	cp = cbuf;
+			      C 	;	*cp++ = *ncp++;
+			      C 	;	*cp++ = *ncp++;
+			      C 	;	*cp++ = *ncp++;
+			      C 	;	cp++;
+			      C 	;	tp = &t[4];
+			      C 	;	ncp = &"JanFebMarAprMayJunJulAugSepOctNovDec"[(*tp)*3];
+			      C 	;	*cp++ = *ncp++;
+			      C 	;	*cp++ = *ncp++;
+			      C 	;	*cp++ = *ncp++;
+			      C 	;	cp = numb(cp, *--tp);
+			      C 	;	cp = numb(cp, *--tp+100);
+			      C 	;	cp = numb(cp, *--tp+100);
+			      C 	;	cp = numb(cp, *--tp+100);
+			      C 	;	cp =+ 2;
+			      C 	;	cp = numb(cp, t[YEAR]);
+			      C 	;	return(cbuf);
+			      C 	;}
+			      C 	
+			      C 	;;mov	di, offset Cbuf
+			      C 	;;mov	si, offset ncp0
+			      C 	;;mov	cx, 13
+			      C 	;;movsw	
+			      C 	;
+ 00AB  BF 0230 R	      C 	mov	di, offset Cbuf	
+			      C 	;mov	si, word ptr [wday]
+			      C 	;shl	si, 1
+			      C 	;shl	si, 1
+			      C 	;add	si, offset ncp1
+			      C 	;movsw
+			      C 	;movsw
+ 00AE  8B 36 01C6 R	      C 	mov	si, word ptr [month]
+ 00B2  D1 E6		      C 	shl	si, 1
+ 00B4  D1 E6		      C 	shl	si, 1
+ 00B6  81 C6 01FC R	      C 	add	si, offset ncp2 - 4
+ 00BA  A5		      C 	movsw
+ 00BB  A5		      C 	movsw
+ 00BC  A1 01C4 R	      C 	mov	ax, word ptr [day]
+			      C 	;mov	cx, 10
+ 00BF  B1 0A		      C 	mov	cl, 10
+ 00C1  E8 00E2		      C 	call	numb
+ 00C4  B0 20		      C  	mov	al, 20h
+ 00C6  AA		      C 	stosb
+			      C 	;
+ 00C7  A1 01C8 R	      C 	mov	ax, word ptr [year]
+ 00CA  B5 64		      C 	mov	ch, 100
+ 00CC  F6 F5		      C 	div	ch
+ 00CE  50		      C 	push	ax ;
+ 00CF  98		      C 	cbw ; century (19, 20)
+ 00D0  E8 00D3		      C 	call	numb
+ 00D3  58		      C 	pop	ax
+ 00D4  8A C4		      C 	mov	al, ah
+ 00D6  98		      C 	cbw ;	year (0 to 99)
+ 00D7  E8 00CC		      C 	call	numb
+ 00DA  B0 20		      C 	mov 	al, 20h
+ 00DC  AA		      C 	stosb
+			      C 	;
+ 00DD  8B 36 01CA R	      C 	mov	si, word ptr [wday]
+ 00E1  D1 E6		      C 	shl	si, 1
+ 00E3  D1 E6		      C 	shl	si, 1
+ 00E5  81 C6 01E4 R	      C 	add	si, offset ncp1
+ 00E9  A5		      C 	movsw
+ 00EA  A5		      C 	movsw
+			      C 	;
+ 00EB  A1 01C2 R	      C 	mov	ax, word ptr [hour]
+ 00EE  E8 00B5		      C 	call	numb
+ 00F1  B0 3A		      C  	mov	al, ':'
+ 00F3  AA		      C 	stosb
+ 00F4  A1 01C0 R	      C 	mov	ax, word ptr [minute]
+ 00F7  E8 00AC		      C 	call	numb
+ 00FA  B0 3A		      C  	mov	al, ':'
+ 00FC  AA		      C 	stosb
+ 00FD  A1 01BE R	      C 	mov	ax, word ptr [second]
+ 0100  E8 00A3		      C 	call	numb
+ 0103  B0 20		      C  	mov	al, 20h
+ 0105  AA		      C 	stosb
+			      C 	;mov	ax, word ptr [year]
+			      C 	;mov	ch, 100
+			      C 	;div	ch
+			      C 	;push	ax ;
+			      C 	;cbw ; century (19, 20)
+			      C 	;call	numb
+			      C 	;pop	ax
+			      C 	;mov	al, ah
+			      C 	;cbw ;	year (0 to 99)
+			      C 	;call	numb
+			      C 	;mov	al, 20h
+			      C 	;stosb
+			      C 	;xor	al, al
+			      C 	;stosb
+			      C 
+			      C 	; 26/02/2022
+ 0106  AA		      C 	stosb
+			      C 
+ 0107  C3		      C 	retn
+			      C 
+ 0108			      C gmtime:
+			      C 	; 24/11/2013 (yday, wday)
+			      C 	; Retro UNIX 8086 v1 - UNIX.ASM (20/06/2013)
+			      C 	; Retro UNIX 8086 v1 feature/procedure only!
+			      C 	; 'convert_from_epoch' procedure prototype: 
+			      C 	; 	            UNIXCOPY.ASM, 10/03/2013
+			      C 	; 30/11/2012
+			      C 	; Derived from DALLAS Semiconductor
+			      C 	; Application Note 31 (DS1602/DS1603)
+			      C 	; 6 May 1998
+			      C 	;
+			      C 	; INPUT:
+			      C 	; DX:AX = Unix (Epoch) Time
+			      C 	;
+			      C 	; ((Modified registers: AX, DX, CX, BX))  
+			      C 	;
+ 0108  B9 003C		      C 	mov cx, 60
+ 010B  E8 0089		      C 	call div32
+			      C 	;mov word ptr [imin], ax   ; whole minutes
+			      C 	;mov word ptr [imin]+2, dx ; since 1/1/1970
+ 010E  89 1E 01BE R	      C 	mov word ptr [second], bx  ; leftover seconds
+			      C 	; mov cx, 60
+ 0112  E8 0082		      C 	call div32
+			      C 	;mov word ptr [ihrs], ax   ; whole hours
+			      C 	;mov word ptr [ihrs]+2, dx ; since 1/1/1970
+ 0115  89 1E 01C0 R	      C 	mov word ptr [minute], bx  ; leftover minutes
+			      C 	; mov cx, 24
+ 0119  B1 18		      C 	mov cl, 24
+ 011B  E8 0079		      C 	call div32
+			      C 	;mov word ptr [iday], ax  ; whole days
+			      C 				  ; since 1/1/1970
+ 011E  A3 01CA R	      C 	mov word ptr [wday], ax ; 24/11/2013	
+			      C 	; mov word ptr [iday]+2, dx ; DX = 0
+ 0121  89 1E 01C2 R	      C 	mov word ptr [hour], bx   ; leftover hours
+ 0125  05 02DB		      C 	add ax, 365+366		  ; whole day since
+			      C 				  ; 1/1/1968 	
+			      C 	; adc dx, 0	          ;  DX = 0
+			      C 	; mov word ptr [iday], ax
+ 0128  50		      C 	push ax
+ 0129  B9 05B5		      C 	mov cx, (4*365)+1	  ; 4 years = 1461 days
+ 012C  E8 0068		      C 	call div32
+ 012F  59		      C 	pop cx
+			      C 	;mov word ptr [lday], ax  ; count of quadyrs (4 years)
+ 0130  53		      C 	push bx
+			      C 	;mov word ptr [qday], bx  ;  days since quadyr began
+ 0131  83 FB 3C		      C 	cmp bx, 31 + 29           ; if past feb 29 then
+ 0134  F5		      C 	cmc			  ; add this quadyr's leap day
+ 0135  83 D0 00		      C 	adc ax, 0		  ; to # of qadyrs (leap days)
+			      C 	;mov word ptr [lday], ax  ; since 1968			  
+			      C 	;mov cx, word ptr [iday]
+ 0138  91		      C 	xchg cx, ax		  ; CX = lday, AX = iday		  
+ 0139  2B C1		      C 	sub ax, cx		  ; iday - lday
+ 013B  B9 016D		      C 	mov cx, 365
+			      C 	;xor dx, dx		  ; DX  = 0
+			      C 	; AX = iday-lday, DX = 0
+ 013E  E8 0056		      C 	call div32
+			      C 	;mov word ptr [iyrs], ax   ; whole years since 1968
+			      C 	; jday = iday - (iyrs*365) - lday
+			      C 	;mov word ptr [jday], bx  ; days since 1/1 of current year
+ 0141  05 07B0		      C 	add ax, 1968		  ; compute year
+ 0144  A3 01C8 R	      C 	mov word ptr [year], ax
+ 0147  8B D0		      C 	mov dx, ax		
+			      C 	;mov ax, word ptr [qday]
+ 0149  58		      C 	pop ax
+ 014A  3D 016D		      C 	cmp ax, 365		  ; if qday <= 365 and qday >= 60	
+ 014D  77 07		      C 	ja short @f		  ; jday = jday +1
+ 014F  83 F8 3C		      C 	cmp ax, 60	          ; if past 2/29 and leap year then
+ 0152  F5		      C         cmc			  ; add a leap day to the # of whole
+ 0153  83 D3 00		      C 	adc bx, 0		  ; days since 1/1 of current year
+ 0156			      C @@:			
+			      C 	; mov word ptr [jday], bx
+			      C 	;mov word ptr [yday], bx ; 24/11/2013	
+ 0156  B9 000C		      C 	mov cx, 12		  ; estimate month
+ 0159  87 CB		      C 	xchg cx, bx		  ; CX = jday, BX = month 	
+ 015B  B8 016E		      C 	mov ax, 366		  ; mday, max. days since 1/1 is 365
+ 015E  83 E2 03		      C 	and dx, 11b		  ; year mod 4	(and dx, 3) 
+ 0161			      C @@:	; Month calculation	  ; 0 to 11  (11 to 0)	
+ 0161  3B C8		      C 	cmp cx, ax		  ; mday = # of days passed from 1/1
+ 0163  73 15		      C 	jnb short @f
+ 0165  4B		      C 	dec bx			  ; month = month - 1
+ 0166  D1 E3		      C 	shl bx, 1 
+ 0168  8B 87 01CC R	      C 	mov ax, word ptr DMonth[BX] ; # elapsed days at 1st of month
+ 016C  D1 EB		      C 	shr bx, 1		  ; bx = month - 1 (0 to 11)
+ 016E  83 FB 01		      C 	cmp bx, 1		  ; if month > 2 and year mod 4  = 0	
+ 0171  76 EE		      C 	jna short @b		  ; then mday = mday + 1
+ 0173  0A D2		      C 	or dl, dl		  ; if past 2/29 and leap year then
+ 0175  75 EA		      C 	jnz short @b		  ; add leap day (to mday)
+ 0177  40		      C 	inc ax			  ; mday = mday + 1
+ 0178  EB E7		      C 	jmp short @b
+ 017A			      C @@:
+ 017A  43		      C 	inc bx 			  ; -> bx = month, 1 to 12
+ 017B  89 1E 01C6 R	      C 	mov word ptr [month], bx
+ 017F  2B C8		      C 	sub cx, ax		  ; day = jday - mday + 1	
+ 0181  41		      C 	inc cx 			  
+ 0182  89 0E 01C4 R	      C 	mov word ptr [day], cx
+			      C 	
+			      C 	; ax, bx, cx, dx is changed at return
+			      C 	; output ->
+			      C 	; [year], [month], [day], [hour], [minute], [second]
+			      C 	; [yday] -> 24/11/2013
+			      C 	; [wday] -> 24/11/2013
+			      C 	;
+			      C 	; 24/11/2013
+ 0186  A1 01CA R	      C 	mov	ax, word ptr [wday] ; [iday]
+ 0189  32 D2		      C 	xor	dl, dl ; xor dx, dx
+			      C 	; dx = 0	
+ 018B  83 C0 04		      C 	add	ax, 4
+			      C 	; NOTE: January 1, 1970 was THURSDAY
+			      C 	; ch = 0
+ 018E  B1 07		      C 	mov	cl, 7
+ 0190  F7 F1		      C 	div	cx
+ 0192  89 16 01CA R	      C 	mov	word ptr [wday], dx ; week of the day,  0 to 6 
+			      C 	; 0 = sunday ... 6 = saturday
+			      C 	;mov	word ptr [isday], 0
+			      C 
+ 0196  C3		      C 	retn
+			      C 
+ 0197			      C div32:
+			      C 	; Input -> DX:AX = 32 bit dividend
+			      C 	;          CX = 16 bit divisor
+			      C 	; output -> DX:AX = 32 bit quotient
+			      C 	;          BX = 16 bit remainder
+ 0197  8B DA		      C 	mov  bx, dx
+ 0199  93		      C 	xchg ax, bx
+ 019A  33 D2		      C 	xor  dx, dx
+ 019C  F7 F1		      C 	div  cx         ; at first, divide DX
+ 019E  93		      C 	xchg ax, bx     ; remainder is in DX
+			      C 			; now, BX has quotient
+			      C 			; save remainder
+ 019F  F7 F1		      C 	div  cx         ; so, DX_AX divided and
+			      C 			; AX has quotient
+			      C 			; DX has remainder
+ 01A1  87 D3		      C 	xchg dx, bx     ; finally, BX has remainder
+			      C 
+ 01A3  C3		      C 	retn
+			      C 
+			      C ;sunday:
+			      C 	; sunday(at, ad)
+			      C 	; 	int *at;
+			      C 	;	 {
+			      C 	; 	register int *t, d;
+			      C 	; 	t = at;
+			      C 	; 	d = ad;
+			      C 	; 	d = ad + dysize(t[YEAR]) - 365;
+			      C 	; 	return(d - (d - t[YDAY] + t[WDAY] + 700) % 7);
+			      C 	; 	}
+			      C 
+			      C 	;mov	dx, word ptr [year]
+			      C 	;call	dysize
+			      C 	;sub	ax, 365
+			      C 	; add 	cx, ax
+			      C ;	test	word ptr [year], 11b
+			      C ;	jnz	short @f
+			      C 	; CX = 119 (77h) or CX = 303 (12Fh)
+			      C 	;inc	cx
+			      C ;	inc	cl
+			      C ;@@:
+			      C ;	mov	ax, cx
+			      C ;	add	ax, word ptr [wday]
+			      C 	;adc	ax, 700
+			      C ;	add	ax, 700
+			      C ;	sub	ax, word ptr [yday]
+			      C 	;xor	dx, dx
+			      C ;	mov	bx, 7
+			      C 	;div	bx
+			      C ;	div	bl
+			      C ;	sub	cx, bx
+			      C ;	retn
+			      C 
+			      C ;dysize:
+			      C ; dysize(y)
+			      C ;	{
+			      C ;	if((y%4) == 0)
+			      C ;		return(366);
+			      C ;	return(365);
+			      C ;	}
+			      C 
+			      C ;	mov 	ax, 365	
+			      C ;	test 	dx, 11b
+			      C ;	jnz 	short @f
+			      C ;	;inc 	ax
+ 01A4  FE C0		      C 	inc 	al			
+			      C ;@@:	
+			      C ;	retn 
+			      C 		
+			      C 
+ 01A6			      C numb:   ; AX = 0 to 99
+			      C 	;
+			      C 	; numb(acp, n)
+			      C 	; {
+			      C 	;	register char *cp;
+			      C 	;
+			      C 	;	cp = acp;
+			      C 	;	cp++;
+			      C 	;	if (n>=10)
+			      C 	;	   *cp++ = (n/10)%10 + '0';
+			      C 	;	else
+			      C 	;	   *cp++ = ' ';
+			      C 	;	*cp++ = n%10 + '0';
+			      C 	;	return(cp);
+			      C 	; }
+			      C 	;
+			      C 	;mov	cl, 10
+ 01A6  83 F8 0A		      C 	cmp 	ax, 10
+ 01A9  73 06		      C 	jnb	short nb1
+ 01AB  8A E0		      C 	mov	ah, al
+ 01AD  32 C0		      C 	xor	al, al ; 0
+ 01AF  EB 04		      C 	jmp	short nb2
+ 01B1			      C nb1:	
+ 01B1  F6 F1		      C 	div	cl
+ 01B3  8A D4		      C 	mov	dl, ah
+			      C 	
+ 01B5			      C nb2:	
+ 01B5  04 30		      C 	add	al, '0'
+ 01B7  AA		      C 	stosb	; digit 1
+ 01B8  8A C4		      C 	mov	al, ah
+ 01BA  04 30		      C 	add	al, '0'
+ 01BC  AA		      C 	stosb	; digit 2
+ 01BD  C3		      C 	retn
+			      C 
+			      C 
+			      C ;;; DATA
+			      C 
+			      C ;daylight: db 1 ; int daylight 1; /* Allow daylight conversion */
+			      C ;nixonflg: db 0 ; int nixonflg 0; /* Daylight time all year around */
+			      C ;daylbegin: dw 0
+			      C ;daylend: dw 0
+			      C 
+			      C 
+ 01BE			      C ct:
+			      C ; 24/11/2013 (re-order)
+			      C ;
+			      C ; Retro UNIX 8086 v1 - UNIX.ASM
+			      C ; 09/04/2013 epoch variables
+			      C ; Retro UNIX 8086 v1 Prototype: UNIXCOPY.ASM, 10/03/2013
+			      C ;
+			      C 
+ 01BE 0000		      C second: dw 0
+ 01C0 0000		      C minute: dw 0
+ 01C2 0000		      C hour: dw 0
+ 01C4 0001		      C day: dw 1
+ 01C6 0001		      C month: dw 1
+ 01C8 07B2		      C year: dw 1970
+ 01CA 0000		      C wday: dw 0 ; 24/11/2013
+			      C ;yday: dw 0 ; 24/11/2013
+			      C ;isday: dw 0 ; 24/11/2013
+			      C 
+ 01CC			      C DMonth:
+ 01CC  0000		      C dw 0
+ 01CE  001F		      C dw 31
+ 01D0  003B		      C dw 59
+ 01D2  005A		      C dw 90
+ 01D4  0078		      C dw 120
+ 01D6  0097		      C dw 151
+ 01D8  00B5		      C dw 181
+ 01DA  00D4		      C dw 212
+ 01DC  00F3		      C dw 243
+ 01DE  0111		      C dw 273
+ 01E0  0130		      C dw 304
+ 01E2  014E		      C dw 334
+			      C 
+			      C ;ncp0: db "Day Mon 00 00:00:00 1970", 0, 0
+ 01E4 53 75 6E 20 4D 6F	      C ncp1: db "Sun Mon Tue Wed Thu Fri Sat "
+       6E 20 54 75 65 20
+       57 65 64 20 54 68
+       75 20 46 72 69 20
+       53 61 74 20
+ 0200 4A 61 6E 20 46 65	      C ncp2: db "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec "
+       62 20 4D 61 72 20
+       41 70 72 20 4D 61
+       79 20 4A 75 6E 20
+       4A 75 6C 20 41 75
+       67 20 53 65 70 20
+       4F 63 74 20 4E 6F
+       76 20 44 65 63 20
+			      C 
+ 0230			      C cbuf: 	; char cbuf[26]
+ 0230  001A [		      C 	db 26 dup(0)
+        00
+       ]
+			      C 
+			      C COMMENT @
+			      C ;; ctime.c (Unix v5)
+			      C 
+			      C #
+			      C /*
+			      C  * This routine converts time as follows.
+			      C  * The epoch is 0000 Jan 1 1970 GMT.
+			      C  * The argument time is in seconds since then.
+			      C  * The localtime(t) entry returns a pointer to an array
+			      C  * containing
+			      C  *  seconds (0-59)
+			      C  *  minutes (0-59)
+			      C  *  hours (0-23)
+			      C  *  day of month (1-31)
+			      C  *  month (0-11)
+			      C  *  year-1970
+			      C  *  weekday (0-6, Sun is 0)
+			      C  *  day of the year
+			      C  *  daylight savings flag
+			      C  *
+			      C  * The routine corrects for daylight saving
+			      C  * time and will work in any time zone provided
+			      C  * "timezone" is adjusted to the difference between
+			      C  * Greenwich and local standard time (measured in seconds).
+			      C  * In places like Michigan "daylight" must
+			      C  * be initialized to 0 to prevent the conversion
+			      C  * to daylight time.
+			      C  *
+			      C  * "nixonflg,", if set to 1, will
+			      C  * cause daylight savings time all year around
+			      C  * independently of "daylight".
+			      C  *
+			      C  * The routine does not work
+			      C  * in Saudi Arabia which runs on Solar time.
+			      C  *
+			      C  * asctime(tvec))
+			      C  * where tvec is produced by localtime
+			      C  * returns a ptr to a character string
+			      C  * that has the ascii time in the form
+			      C  *	Thu Jan 01 00:00:00 1970n0\\
+			      C  *	01234567890123456789012345
+			      C  *	0	  1	    2
+			      C  *
+			      C  * ctime(t) just calls localtime, then asctime.
+			      C  */
+			      C char	cbuf[26];
+			      C int	dmsize[12]
+			      C {
+			      C 	31,
+			      C 	28,
+			      C 	31,
+			      C 	30,
+			      C 	31,
+			      C 	30,
+			      C 	31,
+			      C 	31,
+			      C 	30,
+			      C 	31,
+			      C 	30,
+			      C 	31
+			      C };
+			      C 
+			      C int timezone	5*60*60;
+			      C int tzname[]
+			      C {
+			      C 	"EST",
+			      C 	"EDT",
+			      C };
+			      C int	daylight 1;	/* Allow daylight conversion */
+			      C int	nixonflg 0;	/* Daylight time all year around */
+			      C 
+			      C #define	SEC	0
+			      C #define	MIN	1
+			      C #define	HOUR	2
+			      C #define	MDAY	3
+			      C #define	MON	4
+			      C #define	YEAR	5
+			      C #define	WDAY	6
+			      C #define	YDAY	7
+			      C #define	ISDAY	8
+			      C 
+			      C ctime(at)
+			      C int *at;
+			      C {
+			      C 	return(asctime(localtime(at)));
+			      C }
+			      C 
+			      C localtime(tim)
+			      C int tim[];
+			      C {
+			      C 	register int *t, *ct, dayno;
+			      C 	int daylbegin, daylend;
+			      C 	int copyt[2];
+			      C 
+			      C 	t = copyt;
+			      C 	t[0] = tim[0];
+			      C 	t[1] = tim[1];
+			      C 	dpadd(t, -timezone);
+			      C 	ct = gmtime(t);
+			      C 	dayno = ct[YDAY];
+			      C 	if (nixonflg && (ct[YEAR]>74 || ct[YEAR]==74 && (dayno > 5 ||
+			      C 	    dayno==5 && ct[HOUR]>=2))) {
+			      C 		daylight =| 1;
+			      C 		daylbegin = -1;
+			      C 		daylend = 367;
+			      C 	} else {
+			      C 		daylbegin = sunday(ct, 119);	/* last Sun in Apr */
+			      C 		daylend = sunday(ct, 303);	/* last Sun in Oct */
+			      C 	}
+			      C 	if (daylight &&
+			      C 	    (dayno>daylbegin || (dayno==daylbegin && ct[HOUR]>=2)) &&
+			      C 	    (dayno<daylend || (dayno==daylend && ct[HOUR]<1))) {
+			      C 		dpadd(t, 1*60*60);
+			      C 		ct = gmtime(t);
+			      C 		ct[ISDAY]++;
+			      C 	}
+			      C 	return(ct);
+			      C }
+			      C 
+			      C sunday(at, ad)
+			      C int *at;
+			      C {
+			      C 	register int *t, d;
+			      C 
+			      C 	t = at;
+			      C 	d = ad;
+			      C 	d = ad + dysize(t[YEAR]) - 365;
+			      C 	return(d - (d - t[YDAY] + t[WDAY] + 700) % 7);
+			      C }
+			      C 
+			      C gmtime(tim)
+			      C int tim[];
+			      C {
+			      C 	register int d0, d1;
+			      C 	register *tp;
+			      C 	static xtime[9];
+			      C 	extern int ldivr;
+			      C 
+			      C 	/*
+			      C 	 * break initial number into
+			      C 	 * multiples of 8 hours.
+			      C 	 * (28800 = 60*60*8)
+			      C 	 */
+			      C 
+			      C 	d0 = ldiv(tim[0], tim[1], 28800);
+			      C 	d1 = ldivr;
+			      C 	tp = &xtime[0];
+			      C 
+			      C 	/*
+			      C 	 * generate hours:minutes:seconds
+			      C 	 */
+			      C 
+			      C 	*tp++ = d1%60;
+			      C 	d1 =/ 60;
+			      C 	*tp++ = d1%60;
+			      C 	d1 =/ 60;
+			      C 	d1 =+ (d0%3)*8;
+			      C 	d0 =/ 3;
+			      C 	*tp++ = d1;
+			      C 
+			      C 	/*
+			      C 	 * d0 is the day number.
+			      C 	 * generate day of the week.
+			      C 	 */
+			      C 
+			      C 	xtime[WDAY] = (d0+4)%7;
+			      C 
+			      C 	/*
+			      C 	 * year number
+			      C 	 */
+			      C 	for(d1=70; d0 >= dysize(d1); d1++)
+			      C 		d0 =- dysize(d1);
+			      C 	xtime[YEAR] = d1;
+			      C 	xtime[YDAY] = d0;
+			      C 
+			      C 	/*
+			      C 	 * generate month
+			      C 	 */
+			      C 
+			      C 	if (dysize(d1)==366)
+			      C 		dmsize[1] = 29;
+			      C 	for(d1=0; d0 >= dmsize[d1]; d1++)
+			      C 		d0 =- dmsize[d1];
+			      C 	dmsize[1] = 28;
+			      C 	*tp++ = d0+1;
+			      C 	*tp++ = d1;
+			      C 	xtime[ISDAY] = 0;
+			      C 	return(xtime);
+			      C }
+			      C 
+			      C asctime(t)
+			      C int *t;
+			      C {
+			      C 	register char *cp, *ncp;
+			      C 	register int *tp;
+			      C 
+			      C 	cp = cbuf;
+			      C 	for (ncp = "Day Mon 00 00:00:00 1900\n"; *cp++ = *ncp++;);
+			      C 	ncp = &"SunMonTueWedThuFriSat"[3*t[6]];
+			      C 	cp = cbuf;
+			      C 	*cp++ = *ncp++;
+			      C 	*cp++ = *ncp++;
+			      C 	*cp++ = *ncp++;
+			      C 	cp++;
+			      C 	tp = &t[4];
+			      C 	ncp = &"JanFebMarAprMayJunJulAugSepOctNovDec"[(*tp)*3];
+			      C 	*cp++ = *ncp++;
+			      C 	*cp++ = *ncp++;
+			      C 	*cp++ = *ncp++;
+			      C 	cp = numb(cp, *--tp);
+			      C 	cp = numb(cp, *--tp+100);
+			      C 	cp = numb(cp, *--tp+100);
+			      C 	cp = numb(cp, *--tp+100);
+			      C 	cp =+ 2;
+			      C 	cp = numb(cp, t[YEAR]);
+			      C 	return(cbuf);
+			      C }
+			      C 
+			      C dysize(y)
+			      C {
+			      C 	if((y%4) == 0)
+			      C 		return(366);
+			      C 	return(365);
+			      C }
+			      C 
+			      C 
+			      C numb:
+			      C 	
+			      C 
+			      C numb(acp, n)
+			      C {
+			      C 	register char *cp;
+			      C 
+			      C 	cp = acp;
+			      C 	cp++;
+			      C 	if (n>=10)
+			      C 		*cp++ = (n/10)%10 + '0';
+			      C 	else
+			      C 		*cp++ = ' ';
+			      C 	*cp++ = n%10 + '0';
+			      C 	return(cp);
+			      C }
+			      C 
+			      C @
+			      C 
+
+ 024A 0000			cursor_pos: dw 0
+
+ 024C				dt_txt:
+ 024C  0D				db 0Dh
+ 024D 0A			lf_b:	db 0Ah
+ 024E  43 75 72 72 65 6E		db 'Current Date & Time : '
+       74 20 44 61 74 65
+       20 26 20 54 69 6D
+       65 20 3A 20
+ 0264 = 0018			dt_size equ $ - offset dt_txt	
+ 0264 00			chr:	db 0
+ 0265 00			ttynum: db 0
+
+ 0266				code	ends
+
+					end  start_code
+Microsoft (R) Macro Assembler Version 6.14.8444		    02/26/22 18:30:29
+clock2.asm						     Symbols 2 - 1
+
+
+
+
+Macros:
+
+                N a m e                 Type
+
+sys  . . . . . . . . . . . . . .	Proc
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+code . . . . . . . . . . . . . .	16 Bit	 0266	  Para	  Public  'CODE'	
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+DMonth . . . . . . . . . . . . .	L Near	 01CC	  code	
+_break . . . . . . . . . . . . .	Number	 0011h	 
+_chdir . . . . . . . . . . . . .	Number	 000Ch	 
+_chmod . . . . . . . . . . . . .	Number	 000Fh	 
+_chown . . . . . . . . . . . . .	Number	 0010h	 
+_close . . . . . . . . . . . . .	Number	 0006h	 
+_creat . . . . . . . . . . . . .	Number	 0008h	 
+_emt . . . . . . . . . . . . . .	Number	 001Dh	 
+_exec  . . . . . . . . . . . . .	Number	 000Bh	 
+_exit  . . . . . . . . . . . . .	Number	 0001h	 
+_fork  . . . . . . . . . . . . .	Number	 0002h	 
+_fstat . . . . . . . . . . . . .	Number	 001Ch	 
+_getuid  . . . . . . . . . . . .	Number	 0018h	 
+_gtty  . . . . . . . . . . . . .	Number	 0020h	 
+_ilgins  . . . . . . . . . . . .	Number	 0021h	 
+_intr  . . . . . . . . . . . . .	Number	 001Bh	 
+_link  . . . . . . . . . . . . .	Number	 0009h	 
+_mdate . . . . . . . . . . . . .	Number	 001Eh	 
+_mkdir . . . . . . . . . . . . .	Number	 000Eh	 
+_mount . . . . . . . . . . . . .	Number	 0015h	 
+_open  . . . . . . . . . . . . .	Number	 0005h	 
+_quit  . . . . . . . . . . . . .	Number	 001Ah	 
+_read  . . . . . . . . . . . . .	Number	 0003h	 
+_rele  . . . . . . . . . . . . .	Number	 0000h	 
+_seek  . . . . . . . . . . . . .	Number	 0013h	 
+_setuid  . . . . . . . . . . . .	Number	 0017h	 
+_sleep . . . . . . . . . . . . .	Number	 0022h	 
+_stat  . . . . . . . . . . . . .	Number	 0012h	 
+_stime . . . . . . . . . . . . .	Number	 0019h	 
+_stty  . . . . . . . . . . . . .	Number	 001Fh	 
+_tell  . . . . . . . . . . . . .	Number	 0014h	 
+_time  . . . . . . . . . . . . .	Number	 000Dh	 
+_umount  . . . . . . . . . . . .	Number	 0016h	 
+_unlink  . . . . . . . . . . . .	Number	 000Ah	 
+_wait  . . . . . . . . . . . . .	Number	 0007h	 
+_write . . . . . . . . . . . . .	Number	 0004h	 
+asctime  . . . . . . . . . . . .	L Near	 00AB	  code	
+cbuf . . . . . . . . . . . . . .	L Near	 0230	  code	
+chr  . . . . . . . . . . . . . .	L Near	 0264	  code	
+clk0 . . . . . . . . . . . . . .	L Near	 002C	  code	
+clk1 . . . . . . . . . . . . . .	L Near	 0039	  code	
+clk2 . . . . . . . . . . . . . .	L Near	 0070	  code	
+clk3 . . . . . . . . . . . . . .	L Near	 0097	  code	
+clk4 . . . . . . . . . . . . . .	L Near	 009E	  code	
+clk_pt . . . . . . . . . . . . .	L Near	 0087	  code	
+ctime  . . . . . . . . . . . . .	L Near	 00A8	  code	
+ct . . . . . . . . . . . . . . .	L Near	 01BE	  code	
+cursor_pos . . . . . . . . . . .	L Near	 024A	  code	
+day  . . . . . . . . . . . . . .	L Near	 01C4	  code	
+div32  . . . . . . . . . . . . .	L Near	 0197	  code	
+dt_size  . . . . . . . . . . . .	Number	 0018h	 
+dt_txt . . . . . . . . . . . . .	L Near	 024C	  code	
+gmtime . . . . . . . . . . . . .	L Near	 0108	  code	
+hour . . . . . . . . . . . . . .	L Near	 01C2	  code	
+lf_b . . . . . . . . . . . . . .	L Near	 024D	  code	
+localtime  . . . . . . . . . . .	L Near	 00A8	  code	
+minute . . . . . . . . . . . . .	L Near	 01C0	  code	
+month  . . . . . . . . . . . . .	L Near	 01C6	  code	
+nb1  . . . . . . . . . . . . . .	L Near	 01B1	  code	
+nb2  . . . . . . . . . . . . . .	L Near	 01B5	  code	
+ncp1 . . . . . . . . . . . . . .	L Near	 01E4	  code	
+ncp2 . . . . . . . . . . . . . .	L Near	 0200	  code	
+numb . . . . . . . . . . . . . .	L Near	 01A6	  code	
+second . . . . . . . . . . . . .	L Near	 01BE	  code	
+start_code . . . . . . . . . . .	L Near	 0000	  code	
+terminate  . . . . . . . . . . .	L Near	 0099	  code	
+ttynum . . . . . . . . . . . . .	L Near	 0265	  code	
+wday . . . . . . . . . . . . . .	L Near	 01CA	  code	
+year . . . . . . . . . . . . . .	L Near	 01C8	  code	
+
+	   0 Warnings
+	   0 Errors

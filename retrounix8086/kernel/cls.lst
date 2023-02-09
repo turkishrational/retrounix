@@ -1,0 +1,186 @@
+Microsoft (R) Macro Assembler Version 6.14.8444		    01/30/22 19:06:28
+cls.asm							     Page 1 - 1
+
+
+				; ****************************************************************************
+				;
+				; CLS.ASM  (Retro Unix 8086 v1 - cls - clear video page)
+				; ----------------------------------------------------------------------------
+				;
+				; RETRO UNIX 8086 (Retro Unix == Turkish Rational Unix)
+				; Operating System Project (v0.1) by ERDOGAN TAN (Beginning: 11/07/2012) 
+				; Retro UNIX 8086 v1 - cls (clear screen) file
+				;
+				; [ Last Modification: 30/01/2022 ]
+				;
+				; Derivation from UNIX Operating System (v1.0 for PDP-11) 
+				; (Original) Source Code by Ken Thompson (Bell Laboratories, 1971-1972)
+				;
+				; ****************************************************************************
+				; 30/01/2022
+				; Assembler: MASM 6.14
+				; 	masm cls.asm, cls.obj, cls.lst
+				;	link /t cls.obj
+				;
+
+				.8086
+
+				; UNIX v1 system calls
+ = 0000				_rele 	equ 0
+ = 0001				_exit 	equ 1
+ = 0002				_fork 	equ 2
+ = 0003				_read 	equ 3
+ = 0004				_write	equ 4
+ = 0005				_open	equ 5
+ = 0006				_close 	equ 6
+ = 0007				_wait 	equ 7
+ = 0008				_creat 	equ 8
+ = 0009				_link 	equ 9
+ = 000A				_unlink	equ 10
+ = 000B				_exec	equ 11
+ = 000C				_chdir	equ 12
+ = 000D				_time 	equ 13
+ = 000E				_mkdir 	equ 14
+ = 000F				_chmod	equ 15
+ = 0010				_chown	equ 16
+ = 0011				_break	equ 17
+ = 0012				_stat	equ 18
+ = 0013				_seek	equ 19
+ = 0014				_tell 	equ 20
+ = 0015				_mount	equ 21
+ = 0016				_umount	equ 22
+ = 0017				_setuid	equ 23
+ = 0018				_getuid	equ 24
+ = 0019				_stime	equ 25
+ = 001A				_quit	equ 26	
+ = 001B				_intr	equ 27
+ = 001C				_fstat	equ 28
+ = 001D				_emt 	equ 29
+ = 001E				_mdate 	equ 30
+ = 001F				_stty 	equ 31
+ = 0020				_gtty	equ 32
+ = 0021				_ilgins	equ 33
+
+				;;;
+
+				sys macro syscallnumber, arg1, arg2, arg3
+
+				    ; Retro UNIX 8086 v1 system call.
+
+				    ifnb <arg1> 	
+				      mov bx, arg1
+				    endif
+				    
+				    ifnb <arg2> 	
+				      mov cx, arg2
+				    endif
+
+				    ifnb <arg3> 	
+				      mov dx, arg3
+				    endif
+				     			
+				    mov ax, syscallnumber	
+				    int 20h	
+				   
+				    endm
+
+				; Retro UNIX 8086 v1 system call format:
+				; sys systemcall (ax) <arg1 (bx)>, <arg2 (cx)>, <arg3 (dx)>
+
+
+ 0000				UNIX   	SEGMENT PUBLIC 'CODE'
+				        assume cs:UNIX,ds:UNIX,es:UNIX,ss:UNIX
+
+					; 30/01/2022
+					; clear screen by using 
+					; /// retro unix 8086 v1 kernel (30/01/2022) ///
+					; 'sysstty' system call 
+ 0000				START_CODE:
+					; clear screen
+					;
+					; ax = _stty = 31
+					; bx = 0 (/dev/tty? name pointer will not be used)
+					; cx = 00FFh 
+					;     ch = 0 -> clear screen condition 1 
+					;			     (ch must be 0)
+					;     cl = 0FFh -> clear console screen
+					; dx = 0FFFFh
+					;	clear screen condition 2
+					;		     (dx must be 0FFFFh
+
+					sys	_stty, 0, 00FFh, 0FFFFh
+ 0000  BB 0000		     1	      mov bx, 0
+ 0003  B9 00FF		     1	      mov cx, 00FFh
+ 0006  BA FFFF		     1	      mov dx, 0FFFFh
+ 0009  B8 001F		     1	    mov ax, _stty	
+ 000C  CD 20		     1	    int 20h	
+
+					sys	_exit
+ 000E  B8 0001		     1	    mov ax, _exit	
+ 0011  CD 20		     1	    int 20h	
+
+ 0013				UNIX	ends
+
+					end     START_CODE
+Microsoft (R) Macro Assembler Version 6.14.8444		    01/30/22 19:06:28
+cls.asm							     Symbols 2 - 1
+
+
+
+
+Macros:
+
+                N a m e                 Type
+
+sys  . . . . . . . . . . . . . .	Proc
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+UNIX . . . . . . . . . . . . . .	16 Bit	 0013	  Para	  Public  'CODE'	
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+START_CODE . . . . . . . . . . .	L Near	 0000	  UNIX	
+_break . . . . . . . . . . . . .	Number	 0011h	 
+_chdir . . . . . . . . . . . . .	Number	 000Ch	 
+_chmod . . . . . . . . . . . . .	Number	 000Fh	 
+_chown . . . . . . . . . . . . .	Number	 0010h	 
+_close . . . . . . . . . . . . .	Number	 0006h	 
+_creat . . . . . . . . . . . . .	Number	 0008h	 
+_emt . . . . . . . . . . . . . .	Number	 001Dh	 
+_exec  . . . . . . . . . . . . .	Number	 000Bh	 
+_exit  . . . . . . . . . . . . .	Number	 0001h	 
+_fork  . . . . . . . . . . . . .	Number	 0002h	 
+_fstat . . . . . . . . . . . . .	Number	 001Ch	 
+_getuid  . . . . . . . . . . . .	Number	 0018h	 
+_gtty  . . . . . . . . . . . . .	Number	 0020h	 
+_ilgins  . . . . . . . . . . . .	Number	 0021h	 
+_intr  . . . . . . . . . . . . .	Number	 001Bh	 
+_link  . . . . . . . . . . . . .	Number	 0009h	 
+_mdate . . . . . . . . . . . . .	Number	 001Eh	 
+_mkdir . . . . . . . . . . . . .	Number	 000Eh	 
+_mount . . . . . . . . . . . . .	Number	 0015h	 
+_open  . . . . . . . . . . . . .	Number	 0005h	 
+_quit  . . . . . . . . . . . . .	Number	 001Ah	 
+_read  . . . . . . . . . . . . .	Number	 0003h	 
+_rele  . . . . . . . . . . . . .	Number	 0000h	 
+_seek  . . . . . . . . . . . . .	Number	 0013h	 
+_setuid  . . . . . . . . . . . .	Number	 0017h	 
+_stat  . . . . . . . . . . . . .	Number	 0012h	 
+_stime . . . . . . . . . . . . .	Number	 0019h	 
+_stty  . . . . . . . . . . . . .	Number	 001Fh	 
+_tell  . . . . . . . . . . . . .	Number	 0014h	 
+_time  . . . . . . . . . . . . .	Number	 000Dh	 
+_umount  . . . . . . . . . . . .	Number	 0016h	 
+_unlink  . . . . . . . . . . . .	Number	 000Ah	 
+_wait  . . . . . . . . . . . . .	Number	 0007h	 
+_write . . . . . . . . . . . . .	Number	 0004h	 
+
+	   0 Warnings
+	   0 Errors
