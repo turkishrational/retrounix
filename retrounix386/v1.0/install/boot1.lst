@@ -1,0 +1,3647 @@
+Microsoft (R) Macro Assembler Version 6.14.8444		    04/04/22 15:12:09
+boot1.asm						     Page 1 - 1
+
+
+				; ****************************************************************************
+				;
+				; BOOT1.ASM (Only for bootable UNIX v1 file system on 1.44 MB Floppy Disks)
+				; ----------------------------------------------------------------------------
+				;
+				; RETRO UNIX 8086 (Retro Unix == Turkish Rational Unix)
+				; Operating System Project (v0.1) by ERDOGAN TAN (Beginning: 11/07/2012) 
+				; 1.44 MB Floppy Disk 
+				; Bootable Unix (RUFS) File System - UNIX Kernel Loader (Boot) File
+				; 07/03/2013
+				; Derived from UNIXCOPY.ASM (25/02/2013) 
+				;
+				; [ Last Modification: 04/04/2022 ] (Previous: 05/03/2016)
+				;
+				; Retro Unix is a derivation from UNIX Operating System (v1.0 for PDP-11) 
+				; (Original) Source Code by Ken Thompson (1971-1972)
+				; <Bell Laboratories (17/3/1972)>
+				; <Preliminary Release of UNIX Implementation Document>
+				;
+				; ****************************************************************************
+				; 04/04/2022 - Inode Table/List Start Address Modification. (3 -> 2)
+				; 22/03/2022 - Free Inode Count calculation bugfix (+1)
+				; 05/03/2016
+
+ = 0002				bsFSystemID     equ 2  ; 'RUFS' 
+ = 0006				bsVolumeSerial  equ 6  ; (4 bytes)
+ = 000A				bsFDSign        equ 10 ; 'fd'
+ = 000C				bsDriveNumber   equ 12 ; fd0 or fd1 (0 or 1)
+ = 000D				bsReserved      equ 13 ; 0 (512 bytes per sector)       
+ = 000E				bsSecPerTrack   equ 14 ; 18 (9 or 15)   
+ = 000F				bsHeads         equ 15 ; 2
+ = 0010				bsTracks        equ 16 ; 80
+ = 0012				bs_bf_inode_number equ 18 ; 0 or Boot/Startup File I-Number
+ = 0014				bsInfoEndsign   equ 20 ; '@'
+
+ = 0029				ROOT_DIR_INODE_NUMBER equ 41
+
+ = 1000				kernel_loading_segment equ 1000h ; 09/07/2013
+				       ;; boot file space (segment 7E0h) = 33280 bytes, 
+				       ;; kernel space (segment 1000h) = 65536 bytes
+				;;kernel_loading_segment equ 1800h  ; 05/03/2013
+
+				.8086
+
+ 0000				BOOT1  SEGMENT PUBLIC 'CODE'
+						assume cs:BOOT1,ds:BOOT1,es:BOOT1,ss:BOOT1
+
+ 0000				START_CODE:
+
+ 0000				proc_start  proc near
+						; 07/03/2013 (timer)
+						; 06/03/2013
+						; 05/03/2013
+						; 01/03/2013
+						; 25/02/2013
+						; 24/02/2013 (BOOT1.ASM)
+						; 08/12/2012 (UNIXCOPY)
+						;
+						; 30/11/2012 (UNIXBOOT)
+						;
+
+ 0000  B8 1500 R				mov ax, offset EndOfFile
+ 0003  A3 14E8 R				mov word ptr [BSBUFFER], ax
+ 0006  05 0200					add ax, 512
+ 0009  A3 14EA R				mov word ptr [SUPERBLOCK], ax
+ 000C  05 0200					add ax, 512
+ 000F  A3 14EC R				mov word ptr [DISKBUFFER], ax
+ 0012  05 0200					add ax, 512
+ 0015  A3 14EE R				mov word ptr [FILEBUFFER], ax
+
+ 0018				loc_copy_bootsector:
+						; cli
+						;mov ax, cs
+						;mov sp, sizeoffile + 1000h  
+						;mov ss, ax
+						;mov es, ax
+						;mov ds, ax
+						;sti
+						; cld
+						;xor cx, cx
+						;mov ds, cx
+ 0018  8C D8					mov ax, ds
+ 001A  B9 07C0					mov cx, 7C0h
+ 001D  8E D9					mov ds, cx
+ 001F  33 F6					xor si, si
+ 0021  BF 1500 R				mov di, offset EndOfFile ; word ptr [BSBUFFER]
+ 0024  B9 0100					mov cx, 256
+ 0027  F3/ A5					rep movsw
+						
+ 0029  8E D8					mov ds, ax
+ 002B  A3 14F0 R				mov word ptr [EXTRA_SEGMENT], ax ; RESET ; 06/03/2013
+					      
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; Read Superblock
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; 25/02/2013
+ 002E				loc_read_superblock:
+						; DL = Drive number
+ 002E  88 16 0DF6 R				mov byte ptr [PhysicalDriveNumber], dl
+ 0032  8B 1E 14EA R				mov bx, word ptr [SUPERBLOCK]
+ 0036  B8 0201					mov ax,0201h  ; Read 1 sector
+						;mov cx,2 ; Read superblock
+ 0039  B1 02					mov cl, 2 ; 07/03/2013 (ch=0)
+ 003B  32 F6					xor dh,dh
+ 003D  CD 13					int 13h
+ 003F  73 0C					jnc short loc_unix_welcome
+
+ 0041				loc_drv_read_error:
+ 0041  BE 0E48 R				mov si, offset msg_unix_drv_read_error
+ 0044  E8 0028					call UNIX_PRINTMSG
+
+ 0047  32 E4					xor ah, ah
+ 0049  CD 16					int 16h
+
+ 004B  CD 19					int 19h
+				 
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; Write message
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 004D				loc_unix_welcome:
+ 004D  BE 0DF8 R				mov si, offset UNIX_Welcome
+ 0050  E8 001C					call UNIX_PRINTMSG
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; Timer
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+				; 07/03/2013
+				; Automatic (default) kernel loading with timer tick count
+
+ 0053  8C D8					mov ax, ds ; cs
+ 0055  B9 0040					mov cx, 40h
+ 0058  8E C1					mov es, cx
+ 005A  BB 006C					mov bx, 6Ch
+ 005D  26: 8B 0F				mov cx, word ptr ES:[BX]
+ 0060  81 C1 0444				add cx, 182*6 ; 60 seconds ? 
+ 0064  89 0E 14F2 R				mov word ptr [waiting_count], cx
+ 0068  8E C0					mov es, ax
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; call command interpreter
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 006A				loc_call_unix_prompt:
+ 006A  E8 0011					call unix_prompt
+
+ 006D  CD 19					int 19h
+
+ 006F				proc_start endp
+
+
+ 006F				UNIX_PRINTMSG proc near
+						; 20/01/2013 'call unix_printchr'
+				 
+ 006F				UNIX_PRINTMSG_LOOP:
+ 006F  AC					lodsb                           ; Load byte at DS:SI to AL
+ 0070  22 C0					and     AL,AL            
+ 0072  74 09					jz      short UNIX_PRINTMSG_OK
+ 0074  B4 0E					mov     AH,0Eh                  
+ 0076  BB 0007					mov     BX,07h             
+ 0079  CD 10					int     10h                     ; BIOS Service func ( ah ) = 0Eh
+										; Write char as TTY
+										;AL-char BH-page BL-colo
+						;call   unix_printchr           ; 20/01/2013
+ 007B  EB F2					jmp     short UNIX_PRINTMSG_LOOP           
+
+ 007D				UNIX_PRINTMSG_OK:
+ 007D  C3					retn
+
+ 007E				UNIX_PRINTMSG  endp
+
+				;unix_printchr proc near
+				;               ; 20/01/2013      
+				;               mov     AH,0Eh                  
+				;               mov     BX,07h             
+				;               int     10h                     ; BIOS Service func ( ah ) = 0Eh
+				;                                               ; Write char as TTY
+				;                                               ;AL-char BH-page BL-color
+				;               retn
+				;unix_printchr endp
+
+
+ 007E				unix_prompt proc near
+						; 06/03/2013 
+						; 05/03/2013 (default kernel name: unix)
+						; 25/02/2013 BOOT1 version
+						; 8/12/2012
+						; Derived from
+						; proc_dos_prompt procedure of TRDOS, 
+						; MAINPROG.ASM (1/1/2012). 
+						;
+						; proc_dos_prompt (15/09/2011)
+						;
+
+					       ;push ds
+					       ;pop  es 
+ 007E				unix_prompt_1:
+ 007E  BE 0E0B R				mov     si, offset Boot_Msg
+ 0081  E8 FFEB					call    unix_printmsg
+ 0084				unix_prompt_2:     
+ 0084  B4 03					mov     ah, 03h
+						;mov    bx, 07h                  
+ 0086  CD 10					int     10h
+ 0088  88 16 0E42 R				mov     byte ptr [CursorColumn],dl
+						; 
+ 008C				unix_prompt_14: ; 07/03/2013 
+						; automatic kernel loading timer
+						;
+ 008C  38 3E 14E7 R				cmp     byte ptr [def_kernel], bh ; 0
+ 0090  77 31					ja      short unix_prompt_3
+ 0092				unix_prompt_15:                
+ 0092  F4					hlt     ; halt cpu until external interrupt
+						
+ 0093  B4 01					mov     ah, 1h ; Get keystroke status
+ 0095  CD 16					int     16h
+						; ZF = 0 if key pressed
+ 0097  75 26					jnz     short unix_prompt_16
+						
+ 0099  B9 0040					mov     cx, 40h
+ 009C  8C D8					mov     ax, ds
+ 009E  BB 006C					mov     bx, 6Ch ; mov si, 6Ch
+ 00A1  8E C1					mov     es, cx
+ 00A3  26: 8B 0F				mov     cx, word ptr ES:[BX] ; ES:[SI]
+ 00A6  8E C0					mov     es, ax
+
+ 00A8  3B 0E 14F2 R				cmp     cx, word ptr [waiting_count]
+ 00AC  72 E4					jb      short unix_prompt_15 
+						
+ 00AE  FE 0E 14E7 R				dec     byte ptr [def_kernel] ; FFh
+
+ 00B2  BE 0E8B R				mov     si, offset UNIX_CRLF                
+ 00B5  E8 FFB7					call    unix_printmsg
+						
+ 00B8  BE 149C R				mov     si, offset CommandBuffer
+ 00BB  8B FE					mov     di, si
+ 00BD  EB 72					jmp     short unix_prompt_17
+ 00BF				unix_prompt_16:
+ 00BF  FE 06 14E7 R				inc     byte ptr [def_kernel]
+ 00C3				unix_prompt_3:
+ 00C3  BE 149C R				mov     si, offset CommandBuffer
+ 00C6  E8 0079					call    proc_rw_char
+ 00C9  8B FE					mov     di, si
+ 00CB  33 DB					xor     bx, bx
+ 00CD  33 C9					xor     cx, cx
+ 00CF				unix_prompt_4:
+ 00CF  8A 00					mov     al, byte ptr [SI][BX]
+ 00D1  FE C3					inc     bl 
+ 00D3  3C 20					cmp     al, 20h
+ 00D5  77 1E					ja      short unix_prompt_6
+ 00D7  72 50					jb      short unix_prompt_10
+ 00D9  80 FB 4A					cmp     bl, 74 ; 75 ?
+ 00DC  72 F1					jb      short unix_prompt_4
+ 00DE				unix_prompt_11:
+ 00DE  BB 0007					mov     bx,07h 
+ 00E1  B0 0D					mov     al,0Dh
+ 00E3  B4 0E					mov     ah,0Eh
+ 00E5  CD 10					int     10h
+ 00E7  B0 0A					mov     al,0Ah
+ 00E9  CD 10					int     10h
+ 00EB  EB 91					jmp     unix_prompt_1 ; loop
+ 00ED				unix_prompt_5:
+ 00ED  8A 00					mov     al, byte ptr [SI][BX]
+ 00EF  FE C3					inc     bl
+ 00F1  3C 20					cmp     al,20h
+ 00F3  76 08					jna     short unix_prompt_7
+ 00F5				unix_prompt_6:
+ 00F5  AA					stosb   
+ 00F6  FE C1					inc     cl
+ 00F8  80 FB 4A					cmp     bl, 74 ; 75 ?
+ 00FB  72 F0					jb      short unix_prompt_5
+ 00FD				unix_prompt_7:
+ 00FD  32 C0					xor     al, al ; 0
+ 00FF				unix_prompt_8:
+ 00FF  88 05					mov     byte ptr [DI], al
+ 0101  47					inc     di
+ 0102  80 FB 4A					cmp     bl, 74 ; 75 ?
+ 0105  73 0B					jnb     short unix_prompt_9
+ 0107  8A 00					mov     al, byte ptr [SI][BX]
+ 0109  FE C3					inc     bl
+ 010B  3C 20					cmp     al, 20h
+ 010D  73 F0					jnb     short unix_prompt_8
+ 010F  C6 05 00					mov     byte ptr [DI], 0
+ 0112				unix_prompt_9:
+ 0112  E8 00B4					call    command_interpreter
+
+ 0115  32 C0					xor     al, al ; 07/03/2013
+
+ 0117  38 06 14E6 R				cmp     byte ptr [unix_reboot], al ; 0
+ 011B  77 24					ja      short unix_prompt_13 ; 06/03/2013
+ 011D				unix_prompt_12:
+ 011D  B9 004A					mov     cx, 74 ; 75 ?
+ 0120  BF 149C R				mov     di, offset CommandBuffer
+ 0123  32 C0					xor     al,al
+ 0125  F3/ AA					rep     stosb
+ 0127  EB B5					jmp     short unix_prompt_11 ; 06/03/2013
+ 0129				unix_prompt_10:
+						; 05/03/2013
+ 0129  32 C0					xor     al, al
+ 012B  38 06 14E7 R				cmp     byte ptr [def_kernel], al ; 0
+ 012F  77 AD					ja      short unix_prompt_11 ; 06/03/2013
+						;mov     di, offset CommandBuffer
+ 0131				unix_prompt_17: ; 07/03/2013 (timer code jumps here)
+ 0131  B8 6E75					mov     ax, 'nu'
+ 0134  AB					stosw
+ 0135  B8 7869					mov     ax, 'xi'
+ 0138  AB					stosw
+ 0139  32 C0					xor     al, al  
+ 013B  AA					stosb
+						;mov    cl, 4
+						;jmp    short unix_prompt_9
+ 013C  E8 0205					call    loc_load_kernel ; jump/go to kernel
+ 013F  EB DC					jmp     short unix_prompt_12 ; error return only 
+
+ 0141				unix_prompt_13: ; 06/03/2013
+ 0141  C3					retn
+
+ 0142				unix_prompt endp
+
+
+ 0142				proc_rw_char proc near
+					       ; 8/12/2012 (modification for UNIXCOPY.ASM)
+					       ; OUTPUT -> DS:SI = Entered String (ASCIIZ)
+					       ;
+ 0142				read_next_char:
+ 0142  32 E4				       xor     ah,ah
+ 0144  CD 16				       int     16h
+ 0146  22 C0				       and     al,al
+ 0148  74 3B				       jz      short loc_arrow    
+ 014A  3C E0				       cmp     al,0E0h          
+ 014C  74 37				       je      short loc_arrow
+ 014E  3C 08				       cmp     al,08h
+ 0150  75 3F				       jne     short char_return
+ 0152				loc_back:
+ 0152  B3 07				       mov     bl,7
+ 0154  B4 03				       mov     ah,3
+ 0156  CD 10				       int     10h
+ 0158  3A 16 0E42 R			       cmp     dl,byte ptr [CursorColumn]
+ 015C  77 08				       ja      short prev_column
+ 015E				loc_beep:
+ 015E  B4 0E				       mov     ah, 0Eh
+ 0160  B0 07				       mov     al, 7
+ 0162  CD 10				       int     10h
+ 0164  EB DC				       jmp     short read_next_char
+ 0166				prev_column:
+ 0166  FE CA				       dec     dl
+ 0168				set_cursor_pos:
+ 0168  B4 02				       mov     ah,02h
+ 016A  CD 10				       int     10h
+ 016C  8A DA				       mov     bl, dl
+ 016E  2A 1E 0E42 R			       sub     bl,byte ptr [CursorColumn] 
+ 0172  B9 0001				       mov     cx,1
+ 0175  B4 09				       mov     ah,09h
+ 0177  B0 20				       mov     al,20h
+ 0179  88 00				       mov     byte ptr [SI][BX],al
+ 017B				loc_write_it:
+ 017B  B3 07				       mov     bl,7
+ 017D  CD 10				       int     10h
+ 017F  8B 16 0E42 R			       mov     dx,word ptr [CursorColumn]
+ 0183  EB BD				       jmp     short read_next_char
+ 0185				loc_arrow:    
+ 0185  80 FC 4B				       cmp     AH,4Bh
+ 0188  74 C8				       je      short loc_back
+ 018A  80 FC 53				       cmp     AH,53h
+ 018D  74 C3				       je      short loc_back
+ 018F  EB B1				       jmp     short read_next_char
+ 0191				char_return:
+ 0191  B3 07				       mov     bl,7
+ 0193  B4 03				       mov     ah,3
+ 0195  CD 10				       int     10h
+
+ 0197  8A E2				       mov     ah, dl           
+ 0199  2A 26 0E42 R			       sub     ah,byte ptr [CursorColumn] 
+ 019D  3C 20				       cmp     al,20h
+ 019F  72 22				       jb      short loc_escape
+ 01A1  80 FC 48				       cmp     ah, 72 ; limit
+ 01A4  77 B8				       ja      short loc_beep
+
+ 01A6  8A DC				       mov     bl, ah
+ 01A8  32 E4				       xor     ah, ah
+ 01AA  89 00				       mov     word ptr [SI][BX],ax
+ 01AC  B4 0E				       mov     ah, 0Eh
+ 01AE  B3 07				       mov     bl, 7
+ 01B0  CD 10				       int     10h
+ 01B2  EB 8E				       jmp     short read_next_char
+ 01B4				pass_escape:
+ 01B4  3C 0D				       cmp     al,0Dh
+ 01B6  75 8A				       jne     short read_next_char
+ 01B8  B4 0E				       mov     ah, 0Eh          
+ 01BA  B3 07				       mov     bl,7
+ 01BC  CD 10				       int     10h
+ 01BE  B0 0A				       mov     al,0Ah
+ 01C0  CD 10				       int     10h
+ 01C2  C3				       retn
+ 01C3				loc_escape:
+ 01C3  3C 1B				       cmp     al,1Bh
+ 01C5  75 ED				       jne     short pass_escape
+ 01C7  F9				       stc
+ 01C8  C3				       retn
+
+ 01C9				proc_rw_char endp
+
+
+ 01C9				command_interpreter proc near
+						; 06/03/2013 (loc_load_kernel)
+						; 25/02/2013 BOOT1 version
+						; 23/02/2013 ?/help
+						; 17/02/2013 namei, inode, iget
+						; 16/02/2013 fs, volume 
+						; 21/01/2013 'ls -l'
+						; 20/01/2013 ls (dir modifications)
+						; 13/01/2013 chmod, chown, link
+						; 07/01/2013 show tabspace (div) modif.
+						; 06/01/2013 show
+						; 06/01/2013 rm, mkdir, rmdir modifications
+						; 05/01/2013 check file attributes
+						; 30/12/2012
+						; 24/12/2012 todos
+						; 16/12/2012
+						; 08/12/2012
+						;
+ 01C9  AD					lodsw
+ 01CA				cl3:
+ 01CA  80 F9 03					cmp cl, 3
+ 01CD  72 4A					jb short cl2
+ 01CF  76 03 E9 00A6				ja cl5
+				; DIR
+ 01D4				loc_cmd_dir:    ; 05/01/2013 @b->@f, dir_print modifications
+ 01D4  3D 6964					cmp ax, 'id'
+ 01D7  74 03 E9 0168				jne loc_load_kernel  ; @f
+ 01DC  AC					lodsb
+ 01DD  3C 72					cmp al, 'r'
+ 01DF  74 03 E9 0160				jne loc_load_kernel  ; @f
+						;lodsb
+						;or al, al
+						;jnz loc_load_kernel  ; @f
+ 01E4  C6 06 0FA6 R 00				mov byte ptr [ls_option], 0
+ 01E9  46					inc si
+ 01EA				dir_getarg:     ; 30/12/2012
+ 01EA  AC					lodsb
+ 01EB  3C 20					cmp al, 20h
+ 01ED  74 FB					je short dir_getarg
+ 01EF  73 04					jnb short dir_namei
+ 01F1				ls_getarg3:
+ 01F1  33 C0					xor ax, ax
+ 01F3  EB 0A					jmp short dir_print
+ 01F5				dir_namei:      ; 30/12/2012
+ 01F5  4E					dec si
+ 01F6  89 36 0EC0 R				mov word ptr [u_namep], si
+ 01FA  E8 0515					call name_i
+ 01FD  72 05					jc short ci_error
+						; ax = i-number
+ 01FF				dir_print:
+ 01FF  E8 025C					call print_directory_list
+ 0202  73 06					jnc short @f
+ 0204				ci_error:
+ 0204  BE 0E82 R				mov si, offset error_msg
+ 0207  E8 FE65					call unix_printmsg
+ 020A				@@:             
+ 020A  C3					retn
+				; 23/02/2013
+ 020B				cl1:
+ 020B  3C 3F					cmp al, '?'
+ 020D  74 03 E9 0132				jne loc_load_kernel  ; @b
+						;cmp ah, 0
+						;jne loc_load_kernel  ; @f
+
+ 0212  BE 11D6 R				mov si, offset Boot_Commands
+ 0215  E8 FE57					call UNIX_PRINTMSG
+ 0218				@@:             
+ 0218  C3					retn             
+				; 16/12/2012
+ 0219				cl2:
+ 0219  80 F9 02					cmp cl, 2
+ 021C  72 ED					jb short cl1 ; 23/02/2013
+						; jb @b
+				; LS (DIR)      
+ 021E				loc_cmd_ls:     ; 20/01/2013
+ 021E  3D 736C					cmp ax, 'sl'
+ 0221  75 27					jne short loc_cmd_cd ; 25/02/2013
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @b
+ 0223  C6 06 0FA6 R 01				mov byte ptr [ls_option], 1
+ 0228  46					inc si
+ 0229				ls_getarg1:     ; 21/01/2013
+ 0229  AC					lodsb
+ 022A  3C 20					cmp al, 20h
+ 022C  74 FB					je short ls_getarg1
+ 022E  72 C1					jb short ls_getarg3
+ 0230				ls_getarg2:
+ 0230  3C 2D					cmp al,'-'
+ 0232  75 C1					jne short dir_namei
+ 0234  AC					lodsb
+ 0235  3C 6C					cmp al, 'l'
+ 0237  75 B8					jne short ls_getarg3
+ 0239				ls_getarg4:
+ 0239  AC					lodsb
+ 023A  FE 06 0FA6 R				inc byte ptr [ls_option]
+ 023E  3C 20					cmp al, 20h
+ 0240  74 A8					je short dir_getarg
+ 0242  72 AD					jb short ls_getarg3
+ 0244  FE 0E 0FA6 R				dec byte ptr [ls_option]
+ 0248  EB A7					jmp short ls_getarg3
+				; CD (CHDIR)
+ 024A				loc_cmd_cd:
+ 024A  3D 6463					cmp ax, 'dc'
+ 024D  75 1F					jne short loc_cmd_fs ; 25/02/2023
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @f
+ 024F  46					inc si
+ 0250				ci_cd_getarg:
+ 0250  89 36 0EC0 R				mov word ptr [u_namep], si
+ 0254  AC					lodsb
+ 0255  3C 20					cmp al, 20h
+ 0257  74 F7					je short ci_cd_getarg
+ 0259  72 12					jb short @f
+						; dec si
+
+ 025B  A1 0EC0 R				mov ax, word ptr [u_namep]
+ 025E  A3 0E46 R				mov word ptr [arg], ax
+
+ 0261  E8 03F9					call sys_chdir
+ 0264  72 9E					jc ci_error
+						
+ 0266  8B 36 0E46 R				mov si, word ptr [arg]
+ 026A  E8 0175					call update_cdir_string
+ 026D				@@:
+ 026D  C3					retn
+
+
+				; FS (Volume)  ; 16/02/2013   (File System / Volume Info)
+ 026E  3D 7366			loc_cmd_fs:     cmp ax, 'sf'
+ 0271  74 03 E9 00CE				jne loc_load_kernel  ; @b
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @b
+ 0276				fs_info_print:
+ 0276  E8 0895					call print_volume_info
+ 0279				@@:
+ 0279  C3					retn
+ 027A				cl5:
+ 027A  80 F9 05					cmp cl, 5
+ 027D  76 03 E9 00FE				ja cl6
+ 0282  73 03 E9 0093				jb cl4
+
+				; NAMEI         ; 17/02/2013, print i-number of file/directory
+ 0287				loc_cmd_namei:
+ 0287  3D 616E					cmp ax, 'an'
+ 028A  75 5A					jne short loc_cmd_inode
+ 028C  AD					lodsw
+ 028D  3D 656D					cmp ax, 'em'
+ 0290  74 03 E9 00AF				jne loc_load_kernel  ; @f
+ 0295  AC					lodsb   
+ 0296  3C 69					cmp al, 'i'     
+ 0298  74 03 E9 00A7				jne loc_load_kernel  ; @f
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @f
+ 029D  46					inc si
+ 029E				namei_sf1:
+ 029E  89 36 0EC0 R				mov word ptr [u_namep], si
+ 02A2  AC					lodsb
+ 02A3  3C 20					cmp al, 20h
+ 02A5  74 F7					je short namei_sf1
+ 02A7  72 1D					jb short @f
+ 02A9				namei_sf2:
+ 02A9  AC					lodsb
+ 02AA  3C 20					cmp al, 20h
+ 02AC  77 FB					ja short namei_sf2
+ 02AE  4E					dec si
+ 02AF  32 C0					xor al, al
+ 02B1  88 04					mov byte ptr [SI], al
+ 02B3				namei_fsf:
+ 02B3  E8 045C					call name_i
+ 02B6  73 0F					jnc short namei_iget
+ 02B8				namei_unix_stc: 
+ 02B8  80 FC FF					cmp ah, 0FFh
+ 02BB  73 03 E9 FF44				jb ci_error
+ 02C0  BE 1074 R				mov si, offset NotFound_msg
+ 02C3  E8 FDA9					call UNIX_PRINTMSG
+ 02C6				@@:
+ 02C6  C3					retn
+ 02C7				namei_iget:
+ 02C7  E8 0551					call i_get
+ 02CA				namei_print_inum:
+ 02CA  73 03 E9 FF35				jc ci_error
+ 02CF  8B C8					mov cx, ax
+ 02D1  BE 1084 R				mov si, offset msgINumber
+ 02D4  E8 FD98					call UNIX_PRINTMSG              
+ 02D7  8B C1					mov ax, cx
+ 02D9  B9 0003					mov cx, 3
+ 02DC  E8 07E4					call print_decimal_number
+ 02DF  BE 0E8B R				mov si, offset UNIX_CRLF
+ 02E2  E8 FD8A					call UNIX_PRINTMSG      
+ 02E5  C3					retn
+
+				; INODE         ; 17/02/2013, print inode structure/details
+ 02E6				loc_cmd_inode:
+ 02E6  3D 6E69					cmp ax, 'ni'
+ 02E9  75 59					jne short loc_load_kernel  ; @b
+ 02EB  AD					lodsw
+ 02EC  3D 646F					cmp ax, 'do'
+ 02EF  75 53					jne short loc_load_kernel  ; @b
+ 02F1  AC					lodsb   
+ 02F2  3C 65					cmp al, 'e'     
+ 02F4  75 4E					jne short loc_load_kernel  ; @b
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @b
+ 02F6  46					inc si
+ 02F7				inode_getarg1:
+ 02F7  8B DE					mov bx, si
+ 02F9  AC					lodsb
+ 02FA  3C 20					cmp al, 20h
+ 02FC  74 F9					je short inode_getarg1
+ 02FE  77 05					ja short inode_getarg2
+ 0300  A1 0ED6 R				mov ax, word ptr [ii]
+ 0303  EB 0C					jmp short @f
+ 0305				inode_getarg2:
+ 0305  AC					lodsb
+ 0306  3C 20					cmp al, 20h
+ 0308  77 FB					ja short inode_getarg2
+ 030A  4E					dec si
+ 030B  33 C0					xor ax, ax
+ 030D  88 04					mov byte ptr [SI], al
+ 030F  8B F3					mov si, bx
+ 0311				@@:
+ 0311  E8 0906					call show_inode
+ 0314  73 03 E9 FEEB				jc ci_error
+ 0319				@@:             
+ 0319  C3					retn
+ 031A				cl4:
+						;cmp cl, 4
+						;jb cl3
+				; SHOW
+ 031A				loc_cmd_show:
+						; 06/01/2013
+ 031A  3D 6873					cmp ax, 'hs'
+ 031D  75 25					jne short loc_load_kernel ; loc_cmd_unix ; 05/03/2013
+ 031F  AD					lodsw
+ 0320  3D 776F					cmp ax, 'wo'
+ 0323  75 1F					jne short loc_load_kernel  ; @b
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @b
+ 0325  46					inc si
+ 0326				show_uf1:
+ 0326  89 36 0EC0 R				mov word ptr [u_namep], si
+ 032A  AC					lodsb
+ 032B  3C 20					cmp al, 20h
+ 032D  74 F7					je short show_uf1
+ 032F  72 12					jb short @f
+ 0331				show_uf2:
+ 0331  AC					lodsb
+ 0332  3C 20					cmp al, 20h
+ 0334  77 FB					ja short show_uf2
+ 0336  32 C0					xor al, al
+ 0338  88 44 FF					mov byte ptr [SI]-1, al
+ 033B				show_uf3:
+ 033B  E8 0339					call show_file
+ 033E  73 03 E9 FEC1				jc ci_error
+ 0343				@@:
+ 0343  C3					retn
+
+				; UNIX (default kernel name) ; 06/03/2013
+				;loc_cmd_unix:   
+ 0344				loc_load_kernel: ; 07/03/2013 
+						; 06/03/2013
+ 0344  C7 06 0EC0 R 149C R			mov word ptr [u_namep], offset CommandBuffer
+ 034A  E8 0A62					call load_kernel
+ 034D  73 0B					jnc short @f
+						
+ 034F  80 3E 14E7 R FF				cmp byte ptr [def_kernel], 0FFh ; auto loading
+ 0354  73 03 E9 FF5F				jb namei_unix_stc 
+						
+						; no error msg when it was auto kernel loading
+ 0359  C3					retn
+ 035A				@@:
+ 035A  BE 0E8B R				mov si, offset UNIX_CRLF
+ 035D  E8 FD0F					call unix_printmsg
+					       
+						; 14/07/2013
+ 0360  8A 16 0DF6 R				mov dl, byte ptr [PhysicalDriveNumber]
+ 0364  32 F6					xor dh, dh
+
+ 0366  B8 1000					mov ax, kernel_loading_segment ; 1000h 
+ 0369  8E D8					mov ds, ax
+ 036B  8E C0					mov es, ax
+ 036D  FA					cli
+ 036E  8E D0					mov ss, ax
+ 0370  BC 7FFE					mov sp, 32766 ; 09/07/2013 
+									; FFFEh 
+ 0373  FB					sti
+
+ 0374  BB 1500 R				mov bx, offset EndOfFile ; Relocated BS buffer address
+
+ 0377  8B EC					mov bp, sp
+ 0379  8C C9					mov cx, cs ; 07/03/2013 (CX = Buffer segment) 
+						
+					     ; MASM.EXE don't accept
+					     ; jmp 1000h:0000h
+					     ; for OP Code: EA00000010
+ 037B  EA					db 0EAh
+ 037C  0000					dw 0
+ 037E  1000					dw kernel_loading_segment  ; 09/07/2013 
+					
+ 0380				cl6: ; 16/02/2013       
+ 0380  80 F9 06					cmp cl, 6
+ 0383  77 17					ja short cl8 
+
+				; REBOOT        ; 25/02/201
+ 0385				loc_cmd_reboot:
+ 0385  3D 6572					cmp ax, 'er'
+ 0388  75 BA					jne short loc_load_kernel  ; @b
+ 038A  AD					lodsw
+ 038B  3D 6F62					cmp ax, 'ob'
+ 038E  75 B4					jne short loc_load_kernel  ; @b
+ 0390  AD					lodsw
+ 0391  3D 746F					cmp ax, 'to'
+ 0394  75 AE					jne short loc_load_kernel  ; @b
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @f
+
+ 0396  C6 06 14E6 R 01				mov byte ptr [unix_reboot], 1
+ 039B				@@:
+ 039B  C3					retn
+ 039C				cl8:
+ 039C  80 F9 08					cmp cl, 8
+ 039F  77 FA					ja short @b  ; bad command or file name
+ 03A1  72 A1					jb short loc_load_kernel  ; @b
+				; BOOTFILE
+ 03A3				loc_cmd_bootfile:
+ 03A3  3D 6F62					cmp ax, 'ob'
+ 03A6  75 9C					jne short loc_load_kernel  ; @b
+ 03A8  AD					lodsw
+ 03A9  3D 746F					cmp ax, 'to'
+ 03AC  75 96					jne short loc_load_kernel  ; @b
+ 03AE  AD					lodsw
+ 03AF  3D 6966					cmp ax, 'if'
+ 03B2  75 90					jne short loc_load_kernel  ; @b
+ 03B4  AD					lodsw   
+ 03B5  3D 656C					cmp ax, 'el'    
+ 03B8  75 8A					jne short loc_load_kernel  ; @b
+						;lodsb
+						;or al, al
+						;jnz short loc_load_kernel  ; @b
+
+ 03BA  8B 36 14E8 R				mov si, word ptr [BSBuffer] ; 06/03/2013
+ 03BE  83 C6 12					add si, bs_BF_inode_Number
+ 03C1  8B 04					mov ax, word ptr [SI]
+				;               and ax, ax
+				;               jnz short @f
+				;ci_no_bootfile:                
+				;               mov si, offset msg_Startup_File_Not_Exists
+				;               call UNIX_PRINTMSG
+				;               retn
+ 03C3				@@:
+ 03C3  E8 05A2					call find_bfn
+ 03C6  73 03 E9 FE39				jc  ci_error
+ 03CB				ci_move_bfn_1:
+ 03CB  BE 0ECE R				mov si, offset u_dirbuf + 2
+ 03CE  BF 0E91 R				mov di, offset Boot_File_Name
+ 03D1  B9 0008					mov cx, 8
+ 03D4				ci_move_bfn_2:
+ 03D4  AC					lodsb
+ 03D5  22 C0					and al, al
+ 03D7  75 02					jnz short @f
+ 03D9  88 05					mov byte ptr [DI], al ; 0
+ 03DB				@@:
+ 03DB  AA					stosb
+ 03DC  E2 F6					loop ci_move_bfn_2
+
+ 03DE  E8 05C4					call proc_display_startupfile_info
+
+ 03E1  C3					retn
+
+ 03E2				command_interpreter endp
+
+
+ 03E2				update_cdir_string proc near
+					; 13/01/2013 bugfix
+					; 10/12/2012
+					; 09/12/2012
+					; input -> SI= chdir argument
+ 03E2				ucds_0:
+ 03E2  BB 0E1A R			mov bx, offset unix_cdir
+ 03E5  43				inc bx ; 13/01/2013
+ 03E6  8B FB				mov di, bx
+ 03E8  AC				lodsb
+ 03E9  3C 2F				cmp al, '/'
+ 03EB  75 08				jne short @f
+ 03ED  33 D2				xor dx, dx
+ 03EF  89 16 0E40 R			mov word ptr [CDirOffset], dx
+ 03F3  EB 11				jmp short ucds_6
+ 03F5				@@:
+ 03F5  8B 16 0E40 R			mov dx, word ptr [CDirOffset]
+					; 13/01/2013
+ 03F9  0B D2				or dx, dx
+ 03FB  74 0E				jz short @f
+ 03FD  03 FA				add di, dx
+ 03FF  C6 05 2F				mov byte ptr [DI], '/'
+ 0402  47				inc di
+					;
+ 0403  EB 06				jmp short  @f
+ 0405				ucds_8:
+ 0405  47				inc di
+ 0406				ucds_6:
+ 0406  AC				lodsb
+ 0407  3C 2F				cmp al, '/'
+ 0409  74 FB				je short ucds_6
+ 040B				@@:
+ 040B  0A C0				or al, al
+ 040D  74 39				jz short ucds_5
+ 040F  3C 2E				cmp al, '.'
+ 0411  75 2B				jne short ucds_3
+ 0413  AC				lodsb
+ 0414  3C 2E				cmp al, '.'
+ 0416  74 0F				je short ucds_2 ; dotdot
+ 0418				ucds_1: ;dot
+ 0418  3C 2F				cmp al, '/'
+ 041A  74 EA				je short ucds_6
+ 041C  0A C0				or al, al
+ 041E  74 28				jz short ucds_5
+ 0420  B4 2E				mov ah, '.'
+ 0422  86 E0				xchg ah, al
+ 0424  AB				stosw
+ 0425  EB DF				jmp short ucds_6
+ 0427				ucds_2: ; dotdot
+ 0427  3B FB				cmp di, bx
+ 0429  77 06				ja short @f
+ 042B  33 D2				xor dx, dx
+ 042D  88 15				mov byte ptr [DI], dl ; 0
+ 042F  EB 28				jmp short ucds_7
+ 0431				@@: ; 13/01/2013
+ 0431  4F				dec di
+ 0432				@@: ; move back
+ 0432  4F				dec di ; 13/01/2013
+ 0433  8A 05				mov al, byte ptr [DI]
+ 0435  3C 2F				cmp al, '/'
+ 0437  75 F9				jne short @b ; 13/01/2013
+ 0439  EB CA				jmp short ucds_8
+ 043B				ucds_4:
+ 043B  AA				stosb
+ 043C  EB C8				jmp short ucds_6
+ 043E				ucds_3:
+ 043E  AA				stosb
+ 043F  AC				lodsb
+ 0440  3C 2F				cmp al, '/'
+ 0442  74 F7				je short ucds_4
+ 0444  22 C0				and al, al
+ 0446  75 F6				jnz short ucds_3
+ 0448				ucds_5: ; 13/01/2013
+ 0448  3B FB				cmp di, bx
+ 044A  76 07				jna short ucds_9
+ 044C  4F				dec di
+ 044D  80 3D 2F				cmp byte ptr [DI], '/'
+ 0450  74 01				je short ucds_9
+ 0452  47				inc di
+ 0453				ucds_9:
+					; 13/01/2013
+ 0453  88 05				mov byte ptr [DI], al ; 0
+ 0455  8B D7				mov dx, di
+ 0457  2B D3				sub dx, bx
+ 0459				ucds_7:
+ 0459  89 16 0E40 R			mov word ptr [CDirOffset], dx
+					
+ 045D  C3				retn
+
+ 045E				update_cdir_string  endp
+
+
+ 045E				print_directory_list proc near
+					; 23/02/2013 long list printing (list_count)
+					; 03/02/2013
+					; 22/01/2013 ls -l command feature 
+					; 21/01/2013 dir/ls options
+					; 20/01/2013 directory sign ("/")
+					; 30/12/2012
+ 045E  0B C0				or ax, ax ; i-number of directory       
+ 0460  75 03				jnz short @f
+					
+					; 09/12/2012
+ 0462				pdl_0:  
+ 0462  A1 0EBE R			mov ax, word ptr [u_cdir]
+ 0465				@@:
+ 0465  E8 03B3				call i_get
+ 0468  72 0B				jc short @f ; 20/01/2013 ; jc short pdl_9
+
+ 046A  F7 06 0E9C R 4000		test word ptr [inode_flgs], 4000h ; directory i-node ?
+ 0470  75 04				jnz short pdl_2
+ 0472				pdl_1:
+ 0472  B4 FF				mov ah, 0FFh ; error number
+ 0474  F9				stc
+ 0475				@@: ; 20/01/2013
+				       ;jmp short pdl_9
+ 0475  C3				retn
+ 0476				pdl_2:
+					; 25/02/2013
+ 0476  BE 0E14 R			mov si, offset unix_cdrv ; print current directory
+ 0479  E8 FBF3				call unix_printmsg
+					;
+					;mov ax, word ptr [inode_size]
+					;mov word ptr [u_dirp], ax ; put size of directory in u.dirp
+					
+					;xor ax, ax
+ 047C  32 E4				xor ah, ah
+ 047E  A3 0EC6 R			mov word ptr [u_off], ax ; u.off is file offset used by user
+					;mov word ptr [u_fofp], offset u.off
+							       ; u.fofp is a pointer to the offset portion 
+							       ; of fsp entry
+ 0481  A2 0FA5 R			mov byte ptr [list_count], al ; 0 ; 23/02/2013 
+ 0484				pdl_3:
+ 0484  C7 06 0EC4 R 0ECC R		mov word ptr [u_base], offset u_dirbuf
+								  ; u.dirbuf holds a file name copied from
+								  ; a directory 
+ 048A  C7 06 0EC8 R 000A		mov word ptr [u_count], 10 
+							  ; u.dirbuff holds a file name copied from
+								  ; a directory 
+ 0490  A1 0ED6 R			mov ax, word ptr [ii]
+						
+ 0493  E8 0313				call read_i ; read 10 bytes of file with i-number (R1)
+						   ; i.e. read a directory entry
+ 0496  72 DD				jc short @b ; jc short pdl_9
+					
+ 0498  8B 0E 0ECA R			mov cx, word ptr [u_nread]
+ 049C  0B C9				or cx, cx
+ 049E  76 D2				jna short pdl_1 ; gives error return 
+					
+ 04A0  8B 1E 0ECC R			mov bx, word ptr [u_dirbuf]
+ 04A4  23 DB				and bx, bx       
+ 04A6  75 03 E9 0182			jz pdl_8
+ 04AB				pdl_4:
+ 04AB  BE 0ECE R			mov si, offset u_dirbuf + 2 ; r3, points to file name of directory entry
+ 04AE  B9 0008				mov cx, 8 ; max. file name length
+ 04B1  BF 0E91 R			mov di, offset DirFileName + 1 ; boot_File_Name
+ 04B4				pdl_5:
+ 04B4  AC				lodsb  ; mov al, byte ptr [SI], inc si
+ 04B5  0A C0				or al, al
+ 04B7  74 03				jz short pdl_6 ; 3f. If char is nul, then the last char in string has
+							 ; been compared
+ 04B9  AA				stosb  ; mov byte ptr [DI], al, inc di 
+ 04BA  E2 F8				loop pdl_5
+ 04BC				pdl_6: 
+					; 21/01/2013
+ 04BC  BE 0E8B R			mov si, offset UNIX_CRLF
+ 04BF  E8 FBAD				call unix_printmsg
+ 04C2  80 3E 0FA6 R 01			cmp byte ptr [ls_option], 1
+ 04C7  74 04				je short pdl_7
+					;mov al, 0
+ 04C9  88 05				mov byte ptr [DI], al
+ 04CB  72 45				jb short pdl_13
+ 04CD				pdl_7:
+					; 20/01/2013
+ 04CD  57				push di
+ 04CE  A1 0ED6 R			mov ax, word ptr [ii]
+ 04D1  A3 0E44 R			mov word ptr [pdir], ax
+ 04D4  A1 0ECC R			mov ax, word ptr [u_dirbuf]
+ 04D7  E8 0341				call i_get
+ 04DA  5F				pop di
+ 04DB  73 03 E9 0175			jc pdl_9
+
+					; 22/01/2012
+ 04E0  80 3E 0FA6 R 01			cmp byte ptr [ls_option], 1
+ 04E5  76 0B				jna short @f
+					
+ 04E7				pdl_11: ; 21/01/2013 ; Inode number
+ 04E7  A1 0ECC R			mov ax, word ptr [u_dirbuf]
+ 04EA  B9 0003				mov cx, 3 ; 03/02/2013
+ 04ED  E8 05D3				call print_decimal_number
+ 04F0  EB 1C				jmp short pdl_10
+ 04F2				@@:
+ 04F2  A1 0E9C R			mov ax, word ptr [inode_flgs]
+ 04F5  F6 C4 40				test ah, 40h ; 'directory' flag
+ 04F8  74 14				jz short pdl_10
+
+ 04FA  BE 0ECE R			mov si, offset u_dirbuf + 2
+ 04FD  AC				lodsb
+ 04FE				@@:
+ 04FE  3C 2E				cmp al, '.' ; '.'
+ 0500  75 07				jne short @f
+ 0502  AC				lodsb
+ 0503  0A C0				or al, al
+ 0505  74 07				jz short pdl_10
+ 0507  EB F5				jmp short @b
+ 0509				@@:     
+ 0509  B0 2F				mov  al, '/'
+ 050B  88 05				mov byte ptr [DI], al
+ 050D  47				inc di
+ 050E				pdl_10:
+					; 21/03/2013
+ 050E  32 C0				xor al, al
+ 0510  88 05				mov byte ptr [DI], al
+ 0512				pdl_13: ; File/Directory name
+ 0512  FE 06 0FA5 R			inc byte ptr [list_count] ; 23/02/2013
+ 0516  BE 0E90 R			mov si, offset DirFileName
+ 0519  E8 FB53				call unix_printmsg
+
+					; 22/01/2013
+ 051C  80 3E 0FA6 R 01			cmp byte ptr [ls_option], 1
+ 0521  75 03 E9 00FF			je pdl_12  ; 03/02/2013 short -> near
+ 0526  73 03 E9 0102			jb pdl_8 ; 23/02/2013 
+
+					; 03/02/2013
+ 052B				@@:     ; Owner (uid)
+					;xor bh, bh ; mov bh, 0
+ 052B  B4 03				mov ah, 03h ; get cursor position and size.
+ 052D  CD 10				int 10h
+ 052F  80 FA 0D				cmp dl, 13
+ 0532  73 07				jnb short @f
+ 0534  B0 20				mov al, 20h
+ 0536  E8 011D				call putc
+ 0539  EB F0				jmp short @b
+ 053B				@@:
+ 053B  32 E4				xor ah, ah
+ 053D  A0 0E9F R			mov al, byte ptr [inode_uid]
+ 0540  B9 0003				mov cx, 3
+ 0543  E8 057D				call print_decimal_number       
+ 0546				@@:
+ 0546  B0 20				mov al, 20h
+ 0548  E8 010B				call putc
+					
+ 054B  B0 20				mov al, 20h
+ 054D  E8 0106				call putc
+
+ 0550				@@:     ; Flags/Attributes
+ 0550  8B 16 0E9C R			mov dx, word ptr [inode_flgs]
+ 0554  B1 2D				mov cl, '-'
+ 0556  D0 E6				shl dh, 1
+ 0558  D0 E6				shl dh, 1
+ 055A  73 02				jnc short @f
+ 055C  04 37				add al, 'd'-'-'
+ 055E				@@:
+ 055E  02 C1				add al, cl
+ 0560  E8 00F3				call putc
+ 0563  D0 E2				shl dl, 1
+ 0565  D0 E2				shl dl, 1
+ 0567  D0 E2				shl dl, 1
+ 0569  D0 E2				shl dl, 1
+ 056B  73 02				jnc short @f
+ 056D  04 4B				add al, 'x'-'-'
+ 056F				@@:
+ 056F  02 C1				add al, cl
+ 0571  E8 00E2				call putc
+ 0574  D0 E2				shl dl, 1
+ 0576  73 02				jnc short @f
+ 0578  04 45				add al, 'r'-'-'
+ 057A				@@:
+ 057A  02 C1				add al, cl
+ 057C  E8 00D7				call putc       
+ 057F  D0 E2				shl dl, 1
+ 0581  73 02				jnc short @f
+ 0583  04 4A				add al, 'w'-'-'
+ 0585				@@:
+ 0585  02 C1				add al, cl
+ 0587  E8 00CC				call putc                       
+ 058A  D0 E2				shl dl, 1
+ 058C  73 02				jnc short @f
+ 058E  04 45				add al, 'r'-'-'
+ 0590				@@:
+ 0590  04 2D				add al, '-'
+ 0592  E8 00C1				call putc       
+ 0595  D0 E2				shl dl, 1
+ 0597  73 02				jnc short @f
+ 0599  04 4A				add al, 'w'-'-'
+ 059B				@@:
+ 059B  02 C1				add al, cl
+ 059D  E8 00B6				call putc
+
+ 05A0  B0 20				mov al, 20h
+ 05A2  E8 00B1				call putc
+
+ 05A5				@@: ; File Size ; 03/02/2013
+ 05A5  A1 0EA0 R			mov ax, word ptr [inode_size]
+					;mov cx, 5
+ 05A8  B1 05				mov cl, 5
+ 05AA  E8 0516				call print_decimal_number       
+ 05AD				@@:
+ 05AD  B0 20				mov al, 20h
+ 05AF  E8 00A4				call putc
+
+ 05B2  B0 20				mov al, 20h
+ 05B4  E8 009F				call putc
+
+ 05B7				@@: ; 03/02/2013 ; File creation date & time    
+					;mov ax, word ptr [inode_ctim]
+					;mov dx, word ptr [inode_ctim]+2
+					
+					; 23/02/2013 ; File last modification date & time       
+ 05B7  A1 0EB6 R			mov ax, word ptr [inode_mtim]
+ 05BA  8B 16 0EB8 R			mov dx, word ptr [inode_mtim]+2
+					
+ 05BE  E8 030A				call convert_from_epoch
+					; cx = day
+
+ 05C1  8B C1				mov ax, cx ; word ptr [day]
+ 05C3  BE 0FA7 R			mov si, offset dec_num
+ 05C6  8B DE				mov bx, si
+ 05C8  83 C3 02				add bx, 2       
+					; mov cx, 2
+ 05CB  B1 02				mov cl, 2
+ 05CD  E8 04D0				call proc_bin_to_decimal
+ 05D0  C6 07 2F				mov byte ptr [BX], '/'
+ 05D3  8B F3				mov si, bx
+ 05D5  46				inc si
+ 05D6  A1 0EDC R			mov ax, word ptr [month]
+					; mov cx, 2
+ 05D9  B1 02				mov cl, 2
+ 05DB  E8 04C2				call proc_bin_to_decimal
+ 05DE  83 C3 03				add bx, 3
+ 05E1  C6 07 2F				mov byte ptr [BX], '/'
+ 05E4  8B F3				mov si, bx
+ 05E6  46				inc si
+ 05E7  A1 0EDA R			mov ax, word ptr [year]
+					;mov cx, 4
+ 05EA  B1 04				mov cl, 4
+ 05EC  E8 04B1				call proc_bin_to_decimal
+
+ 05EF  BE 0FA7 R			mov si, offset dec_num
+ 05F2  E8 FA7A				call unix_printmsg
+
+ 05F5  B0 20				mov al, 20h
+ 05F7  E8 005C				call putc
+
+ 05FA  BE 0FA7 R			mov si, offset dec_num
+ 05FD  8B DE				mov bx, si
+ 05FF  A1 0EE0 R			mov ax, word ptr [hour]
+					; mov cx, 2
+ 0602  B1 02				mov cl, 2
+ 0604  E8 0499				call proc_bin_to_decimal
+ 0607  83 C3 02				add bx, 2
+ 060A  C6 07 3A				mov byte ptr [BX],':'
+
+ 060D  8B F3				mov si, bx
+ 060F  46				inc si
+ 0610  A1 0EE2 R			mov ax, word ptr [minute]
+					; mov cx, 2
+ 0613  B1 02				mov cl, 2
+ 0615  E8 0488				call proc_bin_to_decimal
+ 0618  83 C3 03				add bx, 3
+					;mov byte ptr [BX], ':'
+					;mov si, bx
+					;inc si
+					;mov ax, word ptr [second]
+					;;mov cx, 2
+					;mov cl, 2
+					;call proc_bin_to_decimal
+					;add bx,
+ 061B  32 C0				xor al, al
+ 061D  88 07				mov byte ptr [BX], al 
+
+ 061F  BE 0FA7 R			mov si, offset dec_num
+ 0622  E8 FA4A				call unix_printmsg
+ 0625				pdl_12:
+ 0625  A1 0E44 R			mov ax, word ptr [pdir]
+ 0628  E8 01F0				call i_get
+ 062B  72 28				jc pdl_9
+ 062D				pdl_8:
+					; 30/12/2012
+ 062D  A1 0EC6 R			mov ax, word ptr [u_off]
+ 0630  3B 06 0EA0 R			cmp ax, word ptr [inode_size]
+ 0634  73 19				jnb short @f ; 22/02/2013 ; jb pdl_3
+					; 23/02/2013
+ 0636  80 3E 0FA5 R 15	cmp byte ptr [list_count], 21
+ 063B  73 03 E9 FE44			jb pdl_3
+ 0640  32 E4				xor ah, ah
+ 0642  88 26 0FA5 R			mov byte ptr [list_count], ah ; 0
+ 0646  CD 16				int 16h
+ 0648  3C 1B				cmp al, 1Bh  ; ESC key
+ 064A  74 03 E9 FE35			jne pdl_3
+ 064F				@@:
+ 064F  BE 0E8B R			mov si, offset UNIX_CRLF
+ 0652  E8 FA1A				call unix_printmsg
+ 0655				pdl_9:
+ 0655  C3				retn
+
+ 0656				putc:  ; 22/01/2013
+ 0656  B4 0E				mov ah, 0Eh
+					;mov bx, 07h
+ 0658  CD 10				int 10h
+ 065A  32 C0				xor al, al
+
+ 065C  C3				retn
+
+ 065D				print_directory_list endp
+
+
+ 065D				sys_chdir proc near
+					; 09/12/2012 unixcopy.asm
+					;       Retro UNIX v1 FS file import/export version
+					;             of syschdir function  
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					;
+					; RETRO UNIX v1 FS
+					; syschdir:
+					; makes the directory specified in the argument 
+					; the current directory
+
+					; mov word ptr [u_namep], si
+
+ 065D				syschdir_0:
+ 065D  E8 00B2				call name_i
+ 0660  72 14				jc short syschdir_5
+
+ 0662				syschdir_1:
+ 0662  E8 01B6				call i_get
+ 0665  72 0F				jc short syschdir_5
+ 0667				syschdir_2:
+ 0667  F7 06 0E9C R 4000		test word ptr [inode_flgs], 4000h ; directory i-node ?
+ 066D  75 04				jnz short syschdir_4
+ 066F				syschdir_3:
+ 066F  B4 FF				mov ah, 0FFh
+ 0671  F9				stc
+ 0672  C3				retn    
+ 0673				syschdir_4:     
+ 0673  A3 0EBE R			mov word ptr [u_cdir], ax
+					; mov dx, word ptr [cdev]
+					; mov word ptr [u_cdev], dx
+
+ 0676				syschdir_5:
+ 0676  C3				retn
+
+ 0677				sys_chdir endp
+
+
+ 0677				show_file proc near
+					; 05/03/2013
+					; 07/01/2013
+					; 06/01/2013
+					; derived from TRDOS command interpreter file (CMDINTR.ASM)
+					; 'show' procedure (13/09/2011)
+
+ 0677  E8 0098				call name_i
+ 067A  72 55				jc short suf_4
+
+ 067C  E8 019C				call i_get
+ 067F  72 50				jc short suf_4
+
+ 0681  F7 06 0E9C R 4000		test word ptr [inode_flgs], 4000h  ; Directory
+ 0687  75 48				jnz short suf_4
+					
+ 0689  BE 0E8B R			mov si, offset UNIX_CRLF
+ 068C  E8 F9E0				call UNIX_PRINTMSG
+
+ 068F  A1 0EA0 R			mov ax, word ptr [inode_size]
+
+ 0692  BA 0200				mov dx, 512
+ 0695  3B C2				cmp ax, dx
+ 0697  76 02				jna short suf_1
+
+ 0699  8B C2				mov ax, dx
+ 069B				suf_1:
+ 069B  33 D2				xor dx, dx 
+ 069D  89 16 0EC6 R			mov word ptr [u_off], dx
+ 06A1  B9 0016				mov cx, 22
+ 06A4				suf_2:                
+ 06A4  51				push cx 
+ 06A5  A3 0EC8 R			mov word ptr [u_count], ax
+ 06A8  A1 14EE R			mov ax, word ptr [FILEBUFFER]
+ 06AB  A3 0EC4 R			mov word ptr [u_base], ax
+ 06AE  A1 0ED6 R			mov ax, word ptr [ii] ; word ptr [u_dirbuf]
+ 06B1  E8 00F5				call read_i
+ 06B4  59				pop cx
+ 06B5  72 1A				jc short suf_4
+
+ 06B7  8B 3E 0ECA R			mov di, word ptr [u_nread]
+
+ 06BB  0B FF				or di, di
+ 06BD  74 12				jz short suf_4
+
+ 06BF  8B 36 14EE R			mov si, word ptr [FILEBUFFER]
+
+ 06C3  EB 16				jmp short suf_6
+ 06C5				suf_3:
+ 06C5  23 C9				and cx, cx
+ 06C7  75 12				jnz short suf_6
+ 06C9  32 E4				xor ah, ah
+ 06CB  CD 16				int 16h
+ 06CD  3C 1B				cmp al, 1Bh ; ESCAPE Key
+ 06CF  75 07				jne short suf_5
+ 06D1				suf_4:
+ 06D1  BE 0E8B R			mov si, offset UNIX_CRLF
+ 06D4  E8 F998				call UNIX_PRINTMSG
+
+ 06D7  C3				retn
+ 06D8				suf_5:
+ 06D8  B9 0014				mov cx, 20
+ 06DB				suf_6:
+ 06DB  32 FF				xor bh, bh ; mov bh, 0
+ 06DD  B3 07				mov bl, 7
+
+ 06DF  AC				lodsb
+ 06E0  3C 0D				cmp al, 0Dh ; ENTER/RETURN Char
+ 06E2  75 03				jne short suf_7
+ 06E4  49				dec cx
+ 06E5  EB 04				jmp short suf_8 
+ 06E7				suf_7:
+ 06E7  3C 09				cmp al, 09h ; TAB Space Char
+ 06E9  74 0C				je short suf_10
+ 06EB				suf_8:
+ 06EB  B4 0E				mov ah, 0Eh
+					;xor bh, bh ; mov bh, 0
+					;mov bl, 7
+ 06ED  CD 10				int 10h
+ 06EF				suf_9:
+ 06EF  4F				dec di
+ 06F0  75 D3				jnz short suf_3
+ 06F2  A1 0ECA R			mov ax, word ptr [u_nread]
+ 06F5  EB AD				jmp short suf_2
+ 06F7				suf_10:
+ 06F7  51				push cx
+					;xor bh, bh ; mov bh, 0
+ 06F8  B4 03				mov ah, 03h ; get cursor position and size.
+ 06FA  CD 10				int 10h
+ 06FC  8A C2				mov al, dl
+ 06FE  B9 0008				mov cx, 8
+				;suf_11a:
+				;       cmp al, cl
+				;       jb short suf_11b
+				;       sub al, cl
+				;       jmp short suf_11a
+				;suf_11b:
+				;        sub cl, al
+ 0701				suf_11:
+					; 07/01/2013
+ 0701  32 E4				xor ah, ah
+ 0703  F6 F1				div cl
+ 0705  2A CC				sub cl, ah      
+					;
+ 0707  B0 20				mov al, 20h
+ 0709  B4 0E				mov ah, 0Eh 
+					;mov bl, 7 ; char color attribute       
+ 070B				suf_12:
+ 070B  CD 10				int 10h
+ 070D  E2 FC				loop suf_12
+ 070F  59				pop cx
+ 0710  EB DD				jmp short suf_9 
+
+ 0712				show_file endp
+
+
+ 0712				name_i proc near
+					; 05/01/2013
+					; 09/12/2012 unixcopy.asm
+					;       Retro UNIX v1 FS file import/export version
+					; 31/10/2012
+					; 14/10/2012
+					; 07/10/2012
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					;
+					; RETRO UNIX v1 FS
+					;
+					; return i-number of file (in AX)
+					;
+					; input:
+					; u_namep = pointer to file path name
+					; u_cdir = i-number of users directory
+					; ;;u_cdev = device number
+					; output:
+					; cf= 0 -> no error, i-number in AX (R1)
+					; cf= 1 -> error code in AX
+					;       
+
+ 0712  8B 36 0EC0 R			mov si, word ptr [u_namep]
+
+ 0716  80 3C 2F				cmp byte ptr [SI], '/' ; is first char in file name a /
+ 0719  75 0A				jne short @f
+ 071B  B8 0029				mov ax, ROOT_DIR_INODE_NUMBER ; 41
+						; Put i-number of root directory in R1
+					; xor dx, dx
+ 071E  46				inc si  ; go to next char
+ 071F  89 36 0EC0 R			mov word ptr [u_namep], si
+ 0723  EB 03				jmp short namei_0
+ 0725				@@:
+					;mov dx, word ptr [u_cdev]
+ 0725  A1 0EBE R			mov ax, word ptr [u_cdir] 
+						; put i-number of current directory in R1
+ 0728				namei_0:
+					;mov word ptr [cdev], dx 
+						; device file for users directory into cdev
+				; 1
+ 0728  80 3C 00				cmp byte ptr [SI], 0 ; is the character in file name a nul
+ 072B  76 10				jna short namei_7 ;nig
+
+ 072D				namei_1: ; 1            
+					; get i-node with i-number r1
+ 072D  E8 00EB				call i_get
+ 0730  72 0B				jc short namei_7
+
+ 0732  F7 06 0E9C R 4000		test word ptr [inode_flgs], 4000h ; directory i-node ?
+					;jz short namei_6 ; got an error
+ 0738  75 04				jnz short @f
+				;nib:
+ 073A				namei_6:
+ 073A  B4 FF				mov ah, 0FFh ; Error code
+ 073C  F9				stc
+				;nig:
+ 073D				namei_7:
+ 073D  C3				retn
+ 073E				@@:
+ 073E  A1 0EA0 R			mov ax, word ptr [inode_size]
+ 0741  A3 0EC2 R			mov word ptr [u_dirp], ax ; put size of directory in u.dirp
+					
+ 0744  33 C0				xor ax, ax 
+ 0746  A3 0EC6 R			mov word ptr [u_off], ax ; u.off is file offset used by user
+					;mov word ptr [u_fofp], offset u.off
+							       ; u.fofp is a pointer to the offset portion 
+							       ; of fsp entry
+ 0749				namei_2: ; 2
+ 0749  C7 06 0EC4 R 0ECC R		mov word ptr [u_base], offset u_dirbuf
+								  ; u.dirbuf holds a file name copied from
+								  ; a directory 
+ 074F  C7 06 0EC8 R 000A		mov word ptr [u_count], 10      
+					
+ 0755  A1 0ED6 R			mov ax, word ptr [ii]
+						
+ 0758  E8 004E				call read_i ; read 10 bytes of file with i-number (R1)
+						   ; i.e. read a directory entry
+ 075B  72 E0				jc short namei_7
+					
+ 075D  8B 0E 0ECA R			mov cx, word ptr [u_nread]
+
+ 0761  0B C9				or cx, cx
+ 0763  76 D5				jna short namei_6 ; nib ; gives error return 
+					
+ 0765  8B 1E 0ECC R			mov bx, word ptr [u_dirbuf]
+ 0769  23 DB				and bx, bx       
+ 076B  75 0B				jnz short namei_3 ; 3f. branch when active directory entry
+							  ; (i-node word in entry non zero)     
+ 076D  A1 0EC6 R			mov ax, word ptr [u_off]
+ 0770  83 E8 0A				sub ax, 10
+ 0773  A3 0EC2 R			mov word ptr [u_dirp], ax
+ 0776  EB D1				jmp short namei_2 ; 2b
+
+ 0778				namei_3: ; 3
+ 0778  8B 36 0EC0 R			mov si, word ptr [u_namep] ; r2, u.namep points into a file name string
+ 077C  BF 0ECE R			mov di, offset u_dirbuf + 2 ; r3, points to file name of directory entry
+ 077F  BA 0ED6 R			mov dx, offset u_dirbuf + 10
+ 0782				@@:     ; 3
+ 0782  AC				lodsb  ; mov al, byte ptr [SI], inc si   (al = r4)
+ 0783  0A C0				or al, al
+ 0785  74 0D				jz short namei_4 ; 3f. If char is nul, then the last char in string has
+							 ; been compared
+ 0787  3C 2F				cmp al, "/"      ; is char a "/"
+ 0789  74 09				je short namei_4 ; 3f
+ 078B  3B FA				cmp di,dx ; offset u_dirbuf + 10 ; r3, 
+								     ; have i checked all 8 bytes of file name
+ 078D  74 F3				je short @b ; 3b
+ 078F  AE				scasb                 ; cmpb (r3)+, r4   (DI=R3, AL=R4)
+							      ; compare char in u.namep string to file name char
+							      ; read from
+ 0790  74 F0				je short @b ; directory; brach if chars match
+					
+ 0792  EB B5				jmp short namei_2 ; 2b
+							  ; File names do not match, go to next directory entry         
+ 0794				namei_4: ; 3
+ 0794  3B FA				cmp di, dx ; offset u_dirbuf + 10 ; r3, 
+								     ; if equal all 8 bytes were matched
+ 0796  74 06				je short namei_5 ; 3f
+
+ 0798  8A 25				mov ah, byte ptr [DI]
+					;inc di  ; 05/01/2013
+ 079A  22 E4				and ah, ah  ; tstb (r3)+, bne 2b
+ 079C  75 AB				jnz short namei_2 ; 2b
+
+ 079E				namei_5: ; 3
+ 079E  89 36 0EC0 R			mov word ptr [u_namep], si ; r2
+								; u.namep points to char following a "/" or nul
+					;mov bx, word ptr [u_dirbuf] ; r1
+					
+ 07A2  22 C0				and al, al      ; r4. If r4=0 the end of file name reached,
+							; if r4="/" then go to next directory
+ 07A4  8B C3				mov ax, bx
+
+ 07A6  75 85				jnz namei_1 ; 1b
+
+ 07A8  C3				retn
+
+ 07A9				name_i  endp
+
+
+ 07A9				read_i proc near
+					; 06/03/2013 (kernel loading segment)
+					; 05/03/2013
+					; 14/10/2012
+					; Boot sector version of "readi" procedure
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					;;AX (R1) = i-number 
+					; RETRO UNIX v1 FS
+					; Boot sector version
+					;
+					; read from an i-node
+					;
+
+ 07A9  33 D2				xor dx, dx ; 0
+ 07AB  89 16 0ECA R			mov word ptr [u_nread], dx ; accumulated number of bytes transmitted
+ 07AF  39 16 0EC8 R			cmp word ptr [u_count], dx ; is number of byte to read greater than 0
+ 07B3  76 65				jna short read_inode_retn
+
+ 07B5				read_inode_1:
+					; AX = I-Number
+ 07B5  50				push ax
+ 07B6  E8 0062				call i_get ; get i-node into i-node section of core
+ 07B9  8B 16 0EA0 R			mov dx, word ptr [inode_size] ; file size in bytes in r2 (DX)
+ 07BD  2B 16 0EC6 R			sub dx, word ptr [u_off] ; subtract file offset
+ 07C1  76 56				jna short read_inode_3
+ 07C3  3B 16 0EC8 R			cmp dx, word ptr [u_count] 
+							; are enough bytes left in file to carry out read
+ 07C7  73 04				jnb short read_inode_2
+ 07C9  89 16 0EC8 R			mov word ptr [u_count], dx
+
+ 07CD				read_inode_2:
+ 07CD  E8 00C3				call m_get  ; returns physical block number of block in file 
+						   ; where offset points
+					; AX = Physical block number
+ 07D0  E8 008A				call dsk_rd ; read in block, BX points to 1st word of data in
+						   ; buffer
+ 07D3  72 44				jc short read_inode_3
+
+ 07D5				readinode_sioreg:
+ 07D5  8B 36 0EC6 R			mov si, word ptr [u_off] ; R2
+ 07D9  8B CE				mov cx, si ; cx = R3, si = R2
+ 07DB  81 C9 FE00			or cx, 0FE00h ; set bits 9...15 of file offset in R3
+ 07DF  81 E6 01FF			and si, 1FFh ; calculate file offset mod 512
+ 07E3  03 F3				add si, bx ; word ptr [DISKBUFFER] ; si now points to 1st byte in buffer
+						   ; where data is to be placed
+ 07E5  8B 3E 0EC4 R			mov di, word ptr [u_base] ; R1
+ 07E9  F7 D9				neg cx ; 512 - file offset(mod512) in R3 (cx)
+ 07EB  3B 0E 0EC8 R			cmp cx, word ptr [u_count]
+ 07EF  76 04				jna short @f ; 2f
+
+ 07F1  8B 0E 0EC8 R			mov cx, word ptr [u_count]
+ 07F5				@@:
+ 07F5  01 0E 0ECA R			add word ptr [u_nread], cx ; r3 + number of bytes
+							; xmitted during write is put into
+							; u_nread
+ 07F9  29 0E 0EC8 R			sub word ptr [u_count], cx
+ 07FD  01 0E 0EC4 R			add word ptr [u_base], cx ; points to 1st of remaining
+							; data bytes
+ 0801  01 0E 0EC6 R			add word ptr [u_off], cx ; new file offset = number 
+							; of bytes done + old file offset
+
+				; end of readinode_sioreg
+
+					; DI = file (user data) offset
+					; SI = sector (I/O) buffer offset
+					; CX = byte count 
+
+					; 06/03/2013
+ 0805  A1 14F0 R			mov ax, word ptr [EXTRA_SEGMENT] ; kernel loading segment or CS/DS
+ 0808  8E C0				mov es, ax
+
+ 080A  F3/ A4				rep movsb
+
+ 080C  8C D8				mov ax, ds ; 06/03/2013
+ 080E  8E C0				mov es, ax              
+
+ 0810  58				pop ax
+
+ 0811  83 3E 0EC8 R 00			cmp word ptr [u_count], 0
+ 0816  77 9D				ja short read_inode_1
+
+ 0818  C3				retn
+
+ 0819				read_inode_3:   
+ 0819  58				pop ax ; i-number
+
+ 081A				read_inode_retn:
+ 081A  C3				retn 
+
+ 081B				read_i  endp
+
+
+ 081B				i_get   proc near
+					; 02/03/2013
+					; 24/02/2013 BOOT1 version
+					; 18/11/2012 unix boot file configuration version
+					; of "iget" procedure.
+					; 16/9/2012
+					; 14/7/2012
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					;; AX=R1 
+					; RETRO UNIX v1 FS
+					;; return => if cf=1 error number in [Error]  
+
+ 081B  3B 06 0ED6 R			cmp ax, word ptr [ii] ; AX (R1) = i-number of current file
+ 081F  74 0D				je short iget_4
+ 0821				iget_1:
+					; 24/02/2013
+					;mov dl, byte ptr [imod]
+					;and dl, dl ; has i-node of current file been modified ?        
+					;jz short iget_2
+					;xor dl, dl ; mov al, 0
+					;mov byte ptr [imod], dl 
+					;push ax
+					;mov ax, word ptr [ii]  
+					;inc dl ; mov dl, 1
+					;; dl = 1 = write
+					;call i_calc
+					;pop dx
+					;jc short iget_4 
+					;mov ax, dx
+ 0821				iget_2:
+ 0821  23 C0				and ax, ax
+ 0823  74 06				jz short iget_3
+ 0825  A3 0ED6 R			mov word ptr [ii], ax
+					;xor dl, dl ; 02/03/2013                
+					; dl = 0 = read
+ 0828  E8 0004				call i_calc
+ 082B				iget_3:
+ 082B  A1 0ED6 R			mov ax, word ptr [ii]
+ 082E				iget_4:
+ 082E  C3				retn
+
+ 082F				i_get   endp
+
+
+ 082F				i_calc  proc near
+					; 04/04/2022 (47->31)
+					; 05/03/2013
+					; 24/02/2013 BOOT1 version
+					; 18/11/2012 unix boot file configuration version
+					; of "icalc" procedure.
+					; 17/8/2012
+					; 14/7/2012
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					;; AX=R1
+					; 0 = read, 1 = write
+					; RETRO UNIX v1 FS
+					;
+					; i-node is located in block (i+47)/16 and
+					; begins 32*(i+47) mod 16 bytes from its start
+					;; return => if cf=1 error number in [Error]
+
+					;;; input -> dl = 0 -> read, 1 = Write
+
+					;mov byte ptr [rw], dl
+
+					;add ax, 47 ; add 47 to inode number
+					; 04/04/2022
+ 082F  83 C0 1F				add ax, 31 ; add 31 to inode number
+ 0832  50				push ax ; R1 -> -(SP)
+ 0833  D1 E8				shr ax, 1 ; divide by 16
+ 0835  D1 E8				shr ax, 1
+ 0837  D1 E8				shr ax, 1
+ 0839  D1 E8				shr ax, 1
+						  ; ax contains block number of block in which
+						  ; inode exists
+ 083B  E8 001F				call dsk_rd
+ 083E  5A				pop dx
+ 083F  72 1B				jc short icalc_2
+
+ 0841				icalc_1:
+ 0841  83 E2 0F				and dx, 0Fh ; (i+31) mod 16 (2022) ; (i+47) mod 16
+ 0844  D1 E2				shl dx, 1
+ 0846  D1 E2				shl dx, 1
+ 0848  D1 E2				shl dx, 1
+ 084A  D1 E2				shl dx, 1
+ 084C  D1 E2				shl dx, 1 
+						  ; DX = 32*((i+31)mod16) ; 32*((i+47)mod 16)	
+				                  ; DX (R5) points to first word in i-node i.
+
+ 084E  BF 0E9C R			mov di, offset inode
+						; inode is address of first word of current inode
+ 0851  B9 0010				mov cx, 16 ; CX = R3    
+
+ 0854  8B 36 14EC R			mov si, word ptr [DISKBUFFER]
+
+ 0858  03 F2				add si, dx
+
+					; copy new i-node into inode area of (core) memory
+ 085A  F3/ A5				rep movsw
+
+ 085C				icalc_2:
+ 085C  C3				retn
+
+ 085D				i_calc  endp
+
+
+ 085D				dsk_rd  proc near
+					; 06/03/2013
+					; 05/03/2013
+					; 28/11/2012 BugFix 
+					; 20/10/2012 (buff_s)
+					; 14/10/2012
+					; fd boot sector version of "dskrd" procedure
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					; RETRO UNIX v1 FS
+					; floppy disk boot sector version
+					;; return => if cf=1 error number in [Error]
+
+					 ; ax = sector/block number
+
+ 085D  8B 1E 14EC R			 mov bx, word ptr [DISKBUFFER]
+
+ 0861  3B 06 0ED8 R			 cmp ax, word ptr [buff_s] ; buffer sector
+ 0865  74 2B				 je short dsk_rd_3
+
+ 0867  8B F0				 mov si, ax
+
+ 0869  32 ED				 xor ch, ch
+ 086B  B1 04				 mov cl, 4 ; Retry count
+ 086D				dsk_rd_1:
+ 086D  51				 push  cx
+ 086E  BA 0012				 mov   dx, 18                  ; Sectors per track
+ 0871  F6 F2				 div   dl                      
+ 0873  8A CC				 mov   cl, ah                  ; Sector (zero based)
+ 0875  FE C1				 inc   cl                      ; To make it 1 based
+ 0877  D0 E8				 shr   al, 1                   ; Convert Track to Cylinder
+ 0879  80 D6 00				 adc   dh, 0                   ; Heads (0 or 1)
+
+ 087C  8A 16 0DF6 R			 mov   dl, byte ptr [PhysicalDriveNumber] 
+ 0880  8A E8				 mov   ch, al
+
+ 0882  B4 02				 mov   ah, 2                   ; 2=read         
+ 0884  B0 01				 mov   al, 01h
+ 0886  CD 13				 int   13h                     ; BIOS Service func ( ah ) = 2
+								       ; Read disk sectors
+								       ; BIOS Service func ( ah ) = 3
+								       ; Write disk sectors
+								       ;AL-sec num CH-cyl CL-sec
+								       ; DH-head DL-drive ES:BX-buffer
+								       ;CF-flag AH-stat AL-sec read
+ 0888  59				 pop   cx
+ 0889  73 03				 jnc   short dsk_rd_2
+ 088B  E2 E0				 loop  dsk_rd_1
+ 088D  C3				 retn ; 06/03/2013
+ 088E				dsk_rd_2:
+ 088E  89 36 0ED8 R			 mov word ptr [buff_s], si 
+ 0892				dsk_rd_3:         
+ 0892  C3				 retn
+
+ 0893				dsk_rd  endp
+
+
+ 0893				m_get   proc near
+					; 05/03/2013
+					; 03/03/2013
+					; 01/03/2013
+					; 24/02/2013 BOOT1 version
+					; 18/11/2012
+					; 14/11/2012 unix boot file configuration version
+					; of "mget" procedure
+					; 31/10/2012
+					; 20/10/2012
+					; 19/8/2012
+					; 13/8/2012
+					; 27/7/2012
+					; 21/7/2012
+					; Derived from (original) UNIX v1 source code
+					; PRELIMINARY release of Unix Implementation Document, 
+					; 20/6/1972
+					;; return -> AX=R1
+					; RETRO UNIX v1 FS
+					; initialization/format version
+					; cf -> 1 = error (no free block)
+
+					 ;; contents of bx, cx, dx will be destroyed 
+ 0893				mget_0:
+ 0893  8A 1E 0EC7 R			mov bl, byte ptr [u_off]+1
+ 0897  32 FF				xor bh, bh
+					; BX = R2
+ 0899  F7 06 0E9C R 1000		test word ptr [inode_flgs], 4096 ; 1000h
+								     ; is this a large or small file
+ 089F  75 10				jnz short mget_4 ; 4f ; large file
+
+ 08A1  F6 C3 F0				test bl, 0F0h ; !0Fh  ; error if BX (R2) >= 16                    
+ 08A4  75 16				jnz short mget_2 ; 28/02/2013
+
+ 08A6  80 E3 0E				and bl, 0Eh  ; clear all bits but bits 1,2,3
+ 08A9  8B 87 0EA2 R			mov ax, word ptr inode_dskp[BX] ; AX = R1, physical block number
+ 08AD				mget_3: 
+					; 24/02/2013
+ 08AD  83 F8 01				cmp ax, 1
+
+ 08B0				mget_1: ; 2
+ 08B0  C3				retn 
+
+ 08B1				mget_4:  ; 4 ; large file
+					; 05/03/2013
+ 08B1  80 E3 FE				and bl, 0FEh 
+ 08B4  53				push bx
+					; 01/03/2013 Max. possible BX (offset) value is 127 (65535/512)
+					;            for this file system (offset 128 to 255 not in use)
+
+					; There is always 1 indirect block for this file system
+ 08B5  A1 0EA2 R			mov ax, word ptr [inode_dskp] ; inode_dskp[0]
+
+ 08B8  0B C0				or ax, ax
+ 08BA  75 03				jnz short mget_5
+					; 28/02/2013
+ 08BC				mget_2: 
+ 08BC  F9				stc
+ 08BD				mget_7:
+ 08BD  5B				pop bx
+ 08BE  C3				retn
+					
+ 08BF				mget_5: ;2
+					; ax = R1, block number
+ 08BF  E8 FF9B				call dsk_rd ; read indirect block
+ 08C2  72 F9				jc short mget_7
+ 08C4				mget_6:
+ 08C4  58				pop ax ; R2, get offset
+ 08C5  03 D8				add bx, ax ; first word of indirect block
+ 08C7  8B 07				mov ax, word ptr [BX] ; put physical block no of block
+							      ; in file sought in R1 (AX)
+ 08C9  EB E2				jmp short mget_3 ; 24/02/2013
+
+ 08CB				m_get endp
+
+
+ 08CB				convert_from_epoch proc near
+					; 30/11/2012
+					; Derived from DALLAS Semiconductor
+					; Application Note 31 (DS1602/DS1603)
+					; 6 May 1998
+					;
+					; INPUT:
+					; DX:AX = Unix (Epoch) Time
+ 08CB  B9 003C				mov cx, 60
+ 08CE  E8 008A				call proc_div32
+					;mov word ptr [imin], ax   ; whole minutes
+					;mov word ptr [imin]+2, dx ; since 1/1/1970
+ 08D1  89 1E 0EE4 R			mov word ptr [second], bx  ; leftover seconds
+					; mov cx, 60
+ 08D5  E8 0083				call proc_div32
+					;mov word ptr [ihrs], ax   ; whole hours
+					;mov word ptr [ihrs]+2, dx ; since 1/1/1970
+ 08D8  89 1E 0EE2 R			mov word ptr [minute], bx  ; leftover minutes
+					; mov cx, 24
+ 08DC  B1 18				mov cl, 24
+ 08DE  E8 007A				call proc_div32
+					;mov word ptr [iday], ax  ; whole hours
+								  ; since 1/1/1970
+					; mov word ptr [iday]+2, dx ; DX = 0
+ 08E1  89 1E 0EE0 R			mov word ptr [hour], bx   ; leftover hours
+ 08E5  05 02DB				add ax, 365+366           ; whole day since
+								  ; 1/1/1968    
+					; adc dx, 0               ;  DX = 0
+					; mov word ptr [iday], ax
+ 08E8  50				push ax
+ 08E9  B9 05B5				mov cx, (4*365)+1         ; 4 years = 1461 days
+ 08EC  E8 006C				call proc_div32
+ 08EF  59				pop cx
+					;mov word ptr [lday], ax  ; count of quadyrs (4 years)
+ 08F0  53				push bx
+					;mov word ptr [qday], bx  ;  days since quadyr began
+ 08F1  83 FB 3C				cmp bx, 31 + 29           ; if past feb 29 then
+ 08F4  F5				cmc                       ; add this quadyr's leap day
+ 08F5  83 D0 00				adc ax, 0                 ; to # of qadyrs (leap days)
+					;mov word ptr [lday], ax  ; since 1968                    
+					;mov cx, word ptr [iday]
+ 08F8  91				xchg cx, ax               ; CX = lday, AX = iday                  
+ 08F9  2B C1				sub ax, cx                ; iday - lday
+ 08FB  B9 016D				mov cx, 365
+					;xor dx, dx               ; DX  = 0
+					; AX = iday-lday, DX = 0
+ 08FE  E8 005A				call proc_div32
+					;mov word ptr [iyrs], ax   ; whole years since 1968
+					; jday = iday - (iyrs*365) - lday
+					;mov word ptr [jday], bx  ; days since 1/1 of current year
+ 0901  05 07B0				add ax, 1968              ; compute year
+ 0904  A3 0EDA R			mov word ptr [year], ax
+ 0907  8B D0				mov dx, ax              
+					;mov ax, word ptr [qday]
+ 0909  58				pop ax
+ 090A  3D 016D				cmp ax, 365               ; if qday <= 365 and qday >= 60       
+ 090D  77 07				ja short @f               ; jday = jday +1
+ 090F  83 F8 3C				cmp ax, 60                ; if past 2/29 and leap year then
+ 0912  F5				cmc                       ; add a leap day to the # of whole
+ 0913  83 D3 00				adc bx, 0                 ; days since 1/1 of current year
+ 0916				@@:                     
+					;mov word ptr [jday], bx
+ 0916  B9 000C				mov cx, 12                ; estimate month
+ 0919  87 CB				xchg cx, bx               ; CX = jday, BX = month       
+ 091B  B8 016E				mov ax, 366               ; mday, max. days since 1/1 is 365
+ 091E  83 E2 03				and dx, 11b               ; year mod 4  (and dx, 3) 
+ 0921				@@:     ; Month calculation       ; 0 to 11  (11 to 0)  
+ 0921  3B C8				cmp cx, ax                ; mday = # of days passed from 1/1
+ 0923  73 15				jnb short @f
+ 0925  4B				dec bx                    ; month = month - 1
+ 0926  D1 E3				shl bx, 1 
+ 0928  8B 87 0EE6 R			mov ax, word ptr DMonth[BX] ; # elapsed days at 1st of month
+ 092C  D1 EB				shr bx, 1                 ; bx = month - 1 (0 to 11)
+ 092E  83 FB 01				cmp bx, 1                 ; if month > 2 and year mod 4  = 0    
+ 0931  76 EE				jna short @b              ; then mday = mday + 1
+ 0933  0A D2				or dl, dl                 ; if past 2/29 and leap year then
+ 0935  75 EA				jnz short @b              ; add leap day (to mday)
+ 0937  40				inc ax                    ; mday = mday + 1
+ 0938  EB E7				jmp short @b
+ 093A				@@:
+ 093A  43				inc bx                    ; -> bx = month, 1 to 12
+ 093B  89 1E 0EDC R			mov word ptr [month], bx
+ 093F  2B C8				sub cx, ax                ; day = jday - mday + 1       
+ 0941  41				inc cx                    
+ 0942  89 0E 0EDE R			mov word ptr [day], cx
+					
+					; ax, bx, cx, dx is changed at return
+					; output ->
+					; [year], [month], [day], [hour], [minute], [second]
+					; 
+
+ 0946  C3				retn
+
+ 0947				convert_from_epoch endp
+
+
+ 0947				proc_mul32 proc near
+
+				    ; push cx
+
+ 0947  8B CB			      mov cx, bx
+ 0949  8B DA			      mov bx, dx
+
+ 094B  F7 E1			      mul cx
+
+ 094D  93			      xchg ax, bx
+
+ 094E  52			      push dx
+
+ 094F  F7 E1			      mul cx 
+
+ 0951  59			      pop cx 
+
+ 0952  03 C1			      add ax, cx 
+ 0954  83 D2 00			      adc dx, 0
+
+ 0957  93			      xchg bx, ax
+ 0958  87 D3			      xchg dx, bx
+
+				    ; pop cx
+
+ 095A  C3			      retn
+
+ 095B				proc_mul32 endp
+
+
+ 095B				proc_div32 proc near
+					; 1999
+					; (Rx_Dos_Div32) 32 bit divide procedure 
+					; by Erdogan Tan
+					; Input -> DX_AX = 32 bit dividend
+					;          CX = 16 bit divisor
+					; output -> DX_AX = 32 bit quotient
+					;          BX = 16 bit remainder
+ 095B  8B DA				mov  bx, dx
+ 095D  93				xchg ax, bx
+ 095E  33 D2				xor  dx, dx
+ 0960  F7 F1				div  cx         ; at first, divide DX
+ 0962  93				xchg ax, bx     ; remainder is in DX
+							; now, BX has quotient
+							; save remainder
+ 0963  F7 F1				div  cx         ; so, DX_AX divided and
+							; AX has quotient
+							; DX has remainder
+ 0965  87 D3				xchg dx, bx     ; finally, BX has remainder
+
+ 0967  C3				retn
+
+ 0968				proc_div32 endp
+
+
+ 0968				find_bfn proc near
+					; 26/11/2012
+					; 25/11/2012
+					;
+					; find boot file name by i-number (ax)
+					;
+					; cf -> 1 means error, ax = 0 -> not found
+
+ 0968  A3 0E9A R			mov word ptr [uf_i_number], ax
+ 096B  56				push si
+
+ 096C  B8 0029				mov ax, ROOT_DIR_INODE_NUMBER ; 41
+ 096F  E8 FEA9				call i_get
+ 0972  72 2C				jc short loc_find_bfn_retn
+
+					;test word ptr [inode_flgs], 4000h ; directory i-node ?
+					;jnz short @f
+
+					;mov ah, 0FFh ; error number
+					;stc
+					;jmp short loc_find_bfn_retn
+				;;@@:
+ 0974  33 C0				xor ax, ax 
+ 0976  A3 0EC6 R			mov word ptr [u_off], ax ; u_off is file offset used by user
+
+ 0979				loc_find_bfn_1:
+ 0979  C7 06 0EC4 R 0ECC R		mov word ptr [u_base], offset u_dirbuf
+								  ; u.dirbuff holds a file name copied from
+								  ; a directory 
+ 097F  C7 06 0EC8 R 000A		mov word ptr [u_count], 10      
+					
+ 0985  B8 0029				mov ax, ROOT_DIR_INODE_NUMBER 
+
+ 0988  E8 FE1E				call read_i ; read 10 bytes of file with i-number
+						   ; i.e. read a directory entry
+ 098B  72 13				jc short loc_find_bfn_retn
+
+ 098D  A1 0ECA R			mov ax, word ptr [u_nread]
+
+ 0990  0B C0				or ax, ax
+ 0992  74 0E				jz short loc_find_bfn_2 ; gives error return 
+
+ 0994  A1 0ECC R			mov ax, word ptr [u_dirbuf]
+
+ 0997  3B 06 0E9A R			cmp ax, word ptr [uf_i_number] ; Check i-number of directory entry
+ 099B  75 DC				jne short loc_find_bfn_1       ; if same with specified uf_i_number
+								       ; it is the boot file 
+ 099D				loc_find_bfn_3:
+ 099D  E8 FE7B				call i_get
+ 09A0				loc_find_bfn_retn:
+ 09A0  5E				pop si
+ 09A1  C3				retn
+
+ 09A2				loc_find_bfn_2:
+ 09A2  F9				stc
+ 09A3  EB FB				jmp short loc_find_bfn_retn
+					
+ 09A5				find_bfn endp
+
+
+ 09A5				proc_display_startupfile_info proc near
+					       ; 06/03/2013             
+					       ; 30/11/2012     
+					       ; 29/11/2012 ; @@
+					       ; 25/11/2012
+					      
+ 09A5  BE 0E6B R				mov si, offset Msg_StartupFile_Name
+ 09A8  E8 F6C4					call UNIX_PRINTMSG
+
+ 09AB  BE 0E91 R				mov si, offset Boot_File_Name
+ 09AE  E8 F6BE					call UNIX_PRINTMSG
+
+ 09B1  BE 0EFE R				mov si, offset Str_Inode_Number
+ 09B4  E8 F6B8					call UNIX_PRINTMSG
+
+ 09B7  8B 36 14E8 R				mov si, word ptr [BSBuffer] ; 06/03/2013
+ 09BB  83 C6 12					add si, bs_bf_inode_number 
+ 09BE  8B 04					mov ax, word ptr [SI]
+
+ 09C0  BE 0F18 R				mov si, offset Decimal_i_no_str
+ 09C3  B9 0005					mov cx, 5
+ 09C6  E8 00D7					call proc_bin_to_decimal
+
+ 09C9  BE 0F18 R				mov si, offset Decimal_i_no_str 
+
+ 09CC  B9 0004					mov cx, 4
+ 09CF				@@:
+ 09CF  80 3C 30					cmp byte ptr [SI], '0'
+ 09D2  77 03					ja short @f
+ 09D4  46					inc si
+ 09D5  E2 F8					loop @b 
+ 09D7				@@:
+ 09D7  E8 F695					call UNIX_PRINTMSG
+
+ 09DA  BE 0F1E R				mov si, offset Str_startup_file_size
+ 09DD  E8 F68F					call UNIX_PRINTMSG
+
+ 09E0  A1 0EA0 R				mov ax, word ptr [Inode_size]
+ 09E3  BE 0F3C R				mov si, offset Decimal_size_str
+						;mov cx, 5
+ 09E6  B1 05					mov cl, 5
+ 09E8  E8 00B5					call proc_bin_to_decimal
+
+ 09EB  BE 0F3C R				mov si, offset Decimal_size_str
+
+ 09EE  B1 04					mov cl, 4
+ 09F0				@@:
+ 09F0  80 3C 30					cmp byte ptr [SI], '0'
+ 09F3  77 03					ja short @f
+ 09F5  46					inc si
+ 09F6  E2 F8					loop @b 
+ 09F8				@@:
+ 09F8  E8 F674					call UNIX_PRINTMSG
+
+ 09FB  BE 0F35 R				mov si, offset Str_Bytes
+ 09FE  E8 F66E					call UNIX_PRINTMSG
+
+						; 30/11/2012
+					
+ 0A01  A1 0EB2 R				mov ax, word ptr [Inode_ctim]
+ 0A04  8B 16 0EB4 R				mov dx, word ptr [Inode_ctim]+2
+
+ 0A08  E8 FEC0					call convert_from_epoch
+						
+ 0A0B  A1 0EDA R				mov ax, word ptr [year]
+ 0A0E  BE 0F64 R				mov si, offset str_cyear
+						;mov cx, 4
+ 0A11  B1 04					mov cl, 4
+ 0A13  E8 008A					call proc_bin_to_decimal
+						
+ 0A16  A1 0EDC R				mov ax, word ptr [month]
+ 0A19  BE 0F61 R				mov si, offset str_cmonth
+ 0A1C  B1 02					mov cl, 2
+ 0A1E  E8 007F					call proc_bin_to_decimal
+
+ 0A21  A1 0EDE R				mov ax, word ptr [day]
+ 0A24  BE 0F5E R				mov si, offset str_cday
+ 0A27  B1 02					mov cl, 2
+ 0A29  E8 0074					call proc_bin_to_decimal
+
+ 0A2C  A1 0EE0 R				mov ax, word ptr [hour]
+ 0A2F  BE 0F6A R				mov si, offset str_chour
+ 0A32  B1 02					mov cl, 2
+ 0A34  E8 0069					call proc_bin_to_decimal
+
+ 0A37  A1 0EE2 R				mov ax, word ptr [minute]
+ 0A3A  BE 0F6D R				mov si, offset str_cminute
+ 0A3D  B1 02					mov cl, 2
+ 0A3F  E8 005E					call proc_bin_to_decimal
+
+ 0A42  A1 0EE4 R				mov ax, word ptr [second]
+ 0A45  BE 0F70 R				mov si, offset str_csecond
+ 0A48  B1 02					mov cl, 2
+ 0A4A  E8 0053					call proc_bin_to_decimal
+
+ 0A4D  A1 0EB6 R				mov ax, word ptr [Inode_mtim]
+ 0A50  8B 16 0EB8 R				mov dx, word ptr [Inode_mtim]+2
+
+ 0A54  E8 FE74					call convert_from_epoch
+						
+ 0A57  A1 0EDA R				mov ax, word ptr [year]
+ 0A5A  BE 0F94 R				mov si, offset str_myear
+						;mov cx, 4
+ 0A5D  B1 04					mov cl, 4
+ 0A5F  E8 003E					call proc_bin_to_decimal
+						
+ 0A62  A1 0EDC R				mov ax, word ptr [month]
+ 0A65  BE 0F91 R				mov si, offset str_mmonth
+ 0A68  B1 02					mov cl, 2
+ 0A6A  E8 0033					call proc_bin_to_decimal
+
+ 0A6D  A1 0EDE R				mov ax, word ptr [day]
+ 0A70  BE 0F8E R				mov si, offset str_mday
+ 0A73  B1 02					mov cl, 2
+ 0A75  E8 0028					call proc_bin_to_decimal
+
+ 0A78  A1 0EE0 R				mov ax, word ptr [hour]
+ 0A7B  BE 0F9A R				mov si, offset str_mhour
+ 0A7E  B1 02					mov cl, 2
+ 0A80  E8 001D					call proc_bin_to_decimal
+
+ 0A83  A1 0EE2 R				mov ax, word ptr [minute]
+ 0A86  BE 0F9D R				mov si, offset str_mminute
+ 0A89  B1 02					mov cl, 2
+ 0A8B  E8 0012					call proc_bin_to_decimal
+
+ 0A8E  A1 0EE4 R				mov ax, word ptr [second]
+ 0A91  BE 0FA0 R				mov si, offset str_msecond
+ 0A94  B1 02					mov cl, 2
+ 0A96  E8 0007					call proc_bin_to_decimal
+
+ 0A99  BE 0F42 R				mov si, offset Str_SF_date_Time
+ 0A9C  E8 F5D0					call UNIX_PRINTMSG
+					       
+ 0A9F  C3					retn  
+
+ 0AA0				proc_display_startupfile_info endp
+
+
+ 0AA0				proc_bin_to_decimal proc near
+					       ; 30/11/2012 (CX input)  
+					       ; 25/11/2012 unixboot.asm version        
+					       ; 6-5-2009
+					       ;  Erdogan Tan
+					       ; INPUT: DS:SI = Target location
+					       ;        AX = Binary Number
+					       ;        CX = Number of digits   
+					       ; OUTPUT: Decimal chars at DS:SI
+					       ; CX, AX, DX will be changed.
+
+						;push bp
+						;push si
+ 0AA0				loc_reset_str_NumberInput:
+ 0AA0  C6 04 30					mov byte ptr [SI], "0"
+ 0AA3  46					inc si
+ 0AA4  E2 FA					loop loc_reset_str_NumberInput
+ 0AA6  8B EC					mov bp, sp
+ 0AA8  33 D2					xor dx, dx
+ 0AAA  B9 000A					mov cx, 10
+ 0AAD				loc_rediv_NumberInput:
+ 0AAD  F7 F1					div cx
+ 0AAF  80 C2 30					add dl,'0'
+ 0AB2  52					push dx
+ 0AB3  33 D2					xor dx, dx
+ 0AB5  4E					dec si
+ 0AB6  0B C0					or ax, ax
+ 0AB8  75 F3					jnz short loc_rediv_NumberInput
+ 0ABA				loop_popcx_NumberInput: 
+ 0ABA  5A					pop dx
+ 0ABB  88 14					mov byte ptr [SI], dl
+ 0ABD  46					inc si
+ 0ABE  3B EC					cmp bp, sp
+ 0AC0  75 F8					jne short loop_popcx_NumberInput
+						;pop si
+						;pop bp  
+				 
+ 0AC2  C3					retn
+
+ 0AC3				proc_bin_to_decimal endp
+
+
+ 0AC3				print_decimal_number proc near
+					; 05/03/2016
+					; 03/02/2013
+					; 21/01/2013 
+					; print decimal number
+					;
+					; INPUT -> AX = Integer
+					; 32/02/2013 CX = Number of decimal digits
+					; OUTPUT -> decimal number as string
+ 0AC3				pdn0:
+ 0AC3  BE 0FA7 R			mov si, offset dec_num
+					;
+ 0AC6  8B DE				mov bx, si
+ 0AC8  03 F1				add si, cx ; 03/02/2013
+ 0ACA  8B FE				mov di, si
+					;mov cx, 10
+ 0ACC  B1 0A				mov cl, 10
+ 0ACE  B2 30				mov dl, '0'
+ 0AD0				@@: 
+ 0AD0  88 17				mov byte ptr [BX], dl
+ 0AD2  43				inc bx
+ 0AD3  E2 FB				loop @b
+					;
+					;xor dl, dl
+					;mov byte ptr [BX], dl
+ 0AD5  BB 000A				mov bx, 10
+ 0AD8  33 D2				xor dx, dx
+ 0ADA				pdn_itoa:
+ 0ADA  F7 F3				div bx
+					; 03/02/2013
+ 0ADC  00 14				add byte ptr [SI], dl ; 03/02/2013
+ 0ADE  22 D2				and dl, dl
+ 0AE0  75 04				jnz short @f
+ 0AE2  23 C0				and ax, ax ; 05/03/2016 
+ 0AE4  74 05				jz short pdn_14
+ 0AE6				@@:     
+ 0AE6  4E				dec si
+ 0AE7  32 D2				xor dl, dl
+ 0AE9  EB EF				jmp short pdn_itoa
+ 0AEB				pdn_14:
+ 0AEB  BE 0FA7 R			mov si, offset dec_num
+ 0AEE  8B DE				mov bx, si
+ 0AF0				@@:     ; leading zeros will not be printed
+ 0AF0  8A 07				mov al, byte ptr [BX] ; 03/02/2013
+ 0AF2  3C 30				cmp al, '0'
+ 0AF4  77 0B				ja short @f
+ 0AF6  3B DF				cmp bx, di
+ 0AF8  73 07				jnb short @f
+ 0AFA  B0 20				mov al, 20h
+ 0AFC  88 07				mov byte ptr [BX], al 
+ 0AFE  43				inc bx
+ 0AFF  EB EF				jmp short @b
+ 0B01				@@:
+ 0B01  B4 0E				mov ah, 0Eh
+ 0B03  BB 0007				mov bx, 07h
+ 0B06				@@:
+ 0B06  AC				lodsb
+ 0B07				pdn_putc:       
+ 0B07  CD 10				int 10h
+
+ 0B09  3B F7				cmp si, di
+ 0B0B  76 F9				jna short @b
+
+					;mov al, 20h
+					;int 10h
+					
+ 0B0D  C3				retn 
+					
+ 0B0E				print_decimal_number endp
+
+
+ 0B0E				print_volume_info proc near
+					; 22/03/2022
+					; 06/03/2013
+					; 05/03/2013
+					; 16/02/2013
+
+ 0B0E  8B 1E 14E8 R			mov bx, word ptr [BSBuffer] ; 06/03/2013
+ 0B12  83 C3 08				add bx, bsVolumeSerial+2
+ 0B15  B9 0002				mov cx, 2
+ 0B18  BF 100E R			mov di, offset msgVolume_Serial
+ 0B1B				@@:
+ 0B1B  8B 07				mov ax, word ptr [BX]
+ 0B1D  E8 00C1				call proc_hex_double
+ 0B20  AB				stosw
+ 0B21  8B C2				mov ax, dx
+ 0B23  AB				stosw
+ 0B24  49				dec cx
+ 0B25  74 06				jz short @f
+ 0B27  47				inc di
+ 0B28  83 EB 02				sub bx, 2               
+ 0B2B  EB EE				jmp short @b
+ 0B2D				@@:
+ 0B2D  BE 0FB5 R			mov si, offset msgVolume_Info
+ 0B30  E8 F53C				call UNIX_PRINTMSG
+ 0B33				@@:
+ 0B33  8B 1E 14EA R			mov bx, word ptr [SUPERBLOCK] ; SuperBlock 
+						; start of free storage map for disk
+ 0B37				@@:
+ 0B37  8B 07				mov ax, word ptr [BX] ; first word contains # of bytes 
+							; in free storage map
+ 0B39  D1 E0				shl ax, 1       ; multiply AX by 8 gives # of blocks
+ 0B3B  D1 E0				shl ax, 1
+ 0B3D  D1 E0				shl ax, 1       
+ 0B3F  50				push ax         
+ 0B40  BE 101B R			mov si, offset msgVol_Size_Hdr
+ 0B43  E8 F529				call UNIX_PRINTMSG
+ 0B46  58				pop ax
+ 0B47  50				push ax
+ 0B48  B1 04				mov cl, 4 ; mov cx, 4
+ 0B4A  E8 FF76				call print_decimal_number
+ 0B4D  BE 102A R			mov si, offset msgVolume_Size
+ 0B50  E8 F51C				call UNIX_PRINTMSG
+ 0B53  59				pop cx          ; cx = bit count of free storage map
+ 0B54  33 D2				xor dx, dx ; mov dx, 0
+ 0B56  32 DB				xor bl, bl ; xor bx, bx
+ 0B58  8B 36 14EA R			mov si, word ptr [SUPERBLOCK]
+ 0B5C  83 C6 02				add si, 2
+ 0B5F  BF 0010				mov di, 16
+ 0B62				pvi_size_loop1:
+ 0B62  AD				lodsw
+ 0B63  0B C0				or ax, ax
+ 0B65  74 0B				jz short pvi_size_loop3
+ 0B67  51				push cx
+ 0B68  8B CF				mov cx, di
+ 0B6A				pvi_size_loop2:
+ 0B6A  D1 E8				shr ax, 1
+ 0B6C  73 01				jnc short @f
+ 0B6E  43				inc bx
+ 0B6F				@@:
+ 0B6F  E2 F9				loop pvi_size_loop2
+ 0B71  59				pop cx          
+ 0B72				pvi_size_loop3:
+ 0B72  03 D7				add dx, di
+ 0B74  3B D1				cmp dx, cx    
+ 0B76  72 EA				jb short pvi_size_loop1
+
+ 0B78  53				push bx
+ 0B79  BE 1034 R			mov si, offset msgVol_freeblocks_Hdr
+ 0B7C  E8 F4F0				call UNIX_PRINTMSG
+ 0B7F  58				pop ax ; # of free blocks
+ 0B80  B9 0004				mov cx, 4       
+ 0B83  E8 FF3D				call print_decimal_number
+ 0B86  BE 1043 R			mov si, offset msgVolume_freeblocks
+ 0B89  E8 F4E3				call UNIX_PRINTMSG
+
+ 0B8C				@@:
+ 0B8C  8B 1E 14EA R			mov bx, word ptr [SUPERBLOCK]
+ 0B90  8B 07				mov ax, word ptr [BX]
+ 0B92  83 C0 02				add ax, 2
+ 0B95  03 D8				add bx, ax ; 06/03/2013
+						; start of inode map for disk
+ 0B97				@@:
+ 0B97  8B 07				mov ax, word ptr [BX] ; first word contains # of bytes 
+							; in inode map
+					; 22/03/2022
+ 0B99  53				push bx ; **
+ 0B9A  50				push ax ; *
+ 0B9B  D1 E0				shl ax, 1       ; multiply AX by 8 gives # of inodes
+ 0B9D  D1 E0				shl ax, 1
+ 0B9F  D1 E0				shl ax, 1
+					;push bx 
+ 0BA1  50				push ax         
+ 0BA2  BE 104D R			mov si, offset msgVol_icount_Hdr
+ 0BA5  E8 F4C7				call UNIX_PRINTMSG
+ 0BA8  58				pop ax
+					;push ax
+ 0BA9  B1 04				mov cl, 4 ; mov cx, 4
+ 0BAB  E8 FF15				call print_decimal_number
+ 0BAE  BE 105C R			mov si, offset msgVolume_icount
+ 0BB1  E8 F4BB				call UNIX_PRINTMSG
+ 0BB4  59				pop cx  ; *     ; cx = bit count of inode map
+ 0BB5  5E				pop si  ; **    ; inode map offset
+					;
+					; 22/03/2022
+					;add si, 2
+ 0BB6  AD				lodsw	; BugFix - 22/03/2022
+					;
+					;xor dx, dx ; mov dx, 0
+ 0BB7  32 DB				xor bl, bl ; xor bx, bx
+					;mov di, 16
+ 0BB9				pvi_icount_loop1:
+					;lodsw
+					;;cmp ax, 0FFFFh
+					;;je short pvi_icount_loop3
+					;inc ax
+					;jz short pvi_icount_loop3
+					;dec ax
+					;push cx
+					;mov cx, di
+					; 22/03/2022
+ 0BB9  AC				lodsb
+ 0BBA  FE C0				inc al
+ 0BBC  74 0D				jz short pvi_icount_loop3  ; 0FFh -> 0
+ 0BBE  FE C8				dec al
+ 0BC0  B4 08				mov ah, 8
+ 0BC2				pvi_icount_loop2:
+					; 22/03/2022
+					;shr ax, 1
+ 0BC2  D0 E8				shr al, 1
+ 0BC4  72 01				jc short @f
+ 0BC6  43				inc bx
+ 0BC7				@@:
+					;loop pvi_icount_loop2
+ 0BC7  FE CC				dec ah
+ 0BC9  75 F7				jnz short pvi_icount_loop2
+					;pop cx
+ 0BCB				pvi_icount_loop3:
+					; 22/03/2022
+					;add dx, di
+					;cmp dx, cx
+					;jb short pvi_icount_loop1
+ 0BCB  E2 EC				loop pvi_icount_loop1
+
+ 0BCD  53				push bx
+ 0BCE  BE 1062 R			mov si, offset msgVol_free_icount_Hdr
+ 0BD1  E8 F49B				call UNIX_PRINTMSG
+ 0BD4  58				pop ax ; # of free inodes
+ 0BD5  B9 0004				mov cx, 4	
+ 0BD8  E8 FEE8				call print_decimal_number
+ 0BDB  BE 1071 R			mov si, offset msgVolume_free_icount
+					;call UNIX_PRINTMSG
+					;retn
+ 0BDE  E9 F48E				jmp UNIX_PRINTMSG ; 22/03/2022
+					
+ 0BE1				print_volume_info endp
+
+
+ 0BE1				proc_hex_double  proc near
+					; 16/02/2013 (AX:DX)
+					; 28/01/2002 (DX:AX)
+					; From binary (word) to hexadecimal (character) converter
+					;
+					; input -> AX = word (binary number) to be converted
+					; output -> AX = First 2 characters of hexadecimal number
+					; output -> DX = Last 2 characters of hexadecimal number
+
+ 0BE1  51				push cx
+ 0BE2  33 D2				xor dx, dx
+ 0BE4  B9 0010				mov cx, 10h
+ 0BE7  F7 F1				div cx      ; Q in AX, R in DX (DL)
+ 0BE9  52				push dx     ; DH= 0, R in DL <- CX= 10h 
+ 0BEA  32 D2				xor dl, dl
+ 0BEC  F7 F1				div cx      ; DH= 0, R in DL, AX <= FFh
+ 0BEE  F6 F1				div cl      ; AL <= 0Fh
+						    ; R in AH, Q in AL
+ 0BF0  59				pop cx      ; R in CL
+ 0BF1  8A F1				mov dh, cl
+					
+ 0BF3  81 CA 3030			or dx,'00'
+
+ 0BF7  80 FA 39				cmp dl,'9'
+ 0BFA  76 03				jna short pass_cc_dl
+ 0BFC  80 C2 07				add dl,7
+ 0BFF				pass_cc_dl:
+ 0BFF  80 FE 39				cmp dh,'9'
+ 0C02  76 03				jna short pass_cc_dh
+ 0C04  80 C6 07				add dh,7
+ 0C07				pass_cc_dh:
+ 0C07  0D 3030				or ax, '00'
+
+ 0C0A  3C 39				cmp al,'9'
+ 0C0C  76 02				jna short pass_cc_al
+ 0C0E  04 07				add al,7
+ 0C10				pass_cc_al:
+ 0C10  80 FC 39				cmp ah,'9'
+ 0C13  76 03				jna short pass_cc_ah
+ 0C15  80 C4 07				add ah,7
+ 0C18				pass_cc_ah:
+ 0C18  59				pop cx
+
+ 0C19  C3				retn
+
+ 0C1A				proc_hex_double  endp
+
+
+ 0C1A				show_inode  proc near
+					; 05/03/2013
+					; 17/02/2013
+					; print inode details
+					; Format: inode <decimal number>, iget <decimal number>
+					; INPUT -> AX <> 0 -> Current Inode [ii]
+					;          AX = 0 -> use inode number input
+					;
+ 0C1A  23 C0				and ax, ax
+ 0C1C  75 58				jnz short show_inode_7
+ 0C1E  A3 0E46 R			mov word ptr [arg], ax ; 0
+ 0C21  33 D2				xor dx, dx
+ 0C23				show_inode_1:
+ 0C23  AC				lodsb
+ 0C24  3C 30				cmp al, '0'
+ 0C26  72 0E				jb short show_inode_4
+ 0C28  3C 39				cmp al, '9'
+ 0C2A  77 12				ja short show_inode_stc_retn ; cmc
+ 0C2C  2C 30				sub al, '0'
+ 0C2E				show_inode_2:
+ 0C2E  0B D2				or dx, dx
+ 0C30  75 0E				jnz short show_inode_5
+ 0C32				show_inode_3:
+ 0C32  8B D0				mov dx, ax
+ 0C34  EB ED				jmp short show_inode_1
+ 0C36				show_inode_4:
+ 0C36  0B D2				or dx, dx
+ 0C38  74 04				jz short show_inode_stc_retn
+ 0C3A  3C 20				cmp al, 20h
+ 0C3C  76 14				jna short show_inode_6
+ 0C3E				show_inode_stc_retn:
+ 0C3E  F5				cmc
+ 0C3F				show_inode_retn:
+ 0C3F  C3				retn
+ 0C40				show_inode_5:
+ 0C40  81 FA 0100			cmp dx, 256
+ 0C44  73 F8				jnb short show_inode_stc_retn
+ 0C46  8A E2				mov ah, dl
+ 0C48  8A D0				mov dl, al
+ 0C4A  B0 0A				mov al, 10
+ 0C4C  F6 E4				mul ah
+ 0C4E  03 D0				add dx, ax 
+ 0C50  EB D1				jmp short show_inode_1
+ 0C52				show_inode_6:
+ 0C52  8B 1E 14EA R			mov bx, word ptr [SUPERBLOCK]
+ 0C56  8B 07				mov ax, word ptr [BX]
+ 0C58  83 C0 02				add ax, 2
+ 0C5B  8B D8				mov bx, ax
+ 0C5D  8B 07				mov ax, word ptr [BX] ; inode map bytes
+ 0C5F  D1 E0				shl ax, 1
+ 0C61  D1 E0				shl ax, 1
+ 0C63  D1 E0				shl ax, 1 ; inode count
+ 0C65  83 C0 28				add ax, 40 ; + device file inodes
+ 0C68  3B C2				cmp ax, dx
+ 0C6A  72 D3				jb short show_inode_retn ; not a valid i-number
+ 0C6C  8B C2				mov ax, dx
+ 0C6E  A3 0E46 R			mov word ptr [arg], ax
+					; ax = i-number
+ 0C71  E8 FBA7				call i_get
+ 0C74  72 C9				jc short show_inode_retn
+ 0C76				show_inode_7:
+					;mov ax, word ptr [ii]
+ 0C76  E8 FF68				call proc_hex_double
+ 0C79  A3 10C2 R			mov word ptr [txt_inode_number], ax
+ 0C7C  89 16 10C4 R			mov word ptr [txt_inode_number]+2, dx
+ 0C80  A1 0E9C R			mov ax, word ptr [inode_flgs]
+ 0C83  50				push ax
+ 0C84  E8 FF5A				call proc_hex_double
+ 0C87  A3 10D3 R			mov word ptr [txt_inode_flags_h], ax
+ 0C8A  89 16 10D5 R			mov word ptr [txt_inode_flags_h]+2, dx
+ 0C8E  5A				pop dx
+ 0C8F  BF 10DB R			mov di, offset txt_inode_flags_b
+ 0C92  B9 0010				mov cx, 16
+ 0C95				@@:
+ 0C95  32 C0				xor al, al ; 0
+ 0C97  D1 E2				shl dx, 1
+ 0C99  14 30				adc al, '0'                     
+ 0C9B  AA				stosb
+ 0C9C  E2 F7				loop @b
+ 0C9E  A1 0E9E R			mov ax, word ptr [inode_nlks]  ; & uid
+ 0CA1  E8 FF3D				call proc_hex_double
+ 0CA4  89 16 10FC R			mov word ptr [txt_inode_nlks], dx
+ 0CA8  A3 110B R			mov word ptr [txt_inode_uid], ax
+ 0CAB  A1 0EA0 R			mov ax, word ptr [inode_size]
+ 0CAE  E8 FF30				call proc_hex_double
+ 0CB1  A3 1117 R			mov word ptr [txt_inode_size], ax
+ 0CB4  89 16 1119 R			mov word ptr [txt_inode_size]+2, dx
+ 0CB8  B1 08				mov cl, 8
+ 0CBA  BE 0EA2 R			mov si, offset inode_dskp
+ 0CBD  BF 112C R			mov di, offset txt_inode_dskp
+ 0CC0				@@:
+ 0CC0  AD				lodsw
+ 0CC1  E8 FF1D				call proc_hex_double    
+ 0CC4  AB				stosw
+ 0CC5  8B C2				mov ax, dx
+ 0CC7  AB				stosw
+ 0CC8  FE C9				dec cl
+ 0CCA  74 04				jz short @f
+ 0CCC  47				inc di
+ 0CCD  47				inc di
+ 0CCE  EB F0				jmp short @b
+ 0CD0				@@:
+					;mov si, offset inode_ctim
+ 0CD0  8B 04				mov ax, word ptr [SI]
+ 0CD2  8B 54 02				mov dx, word ptr [SI]+2
+ 0CD5  52				push dx
+ 0CD6  50				push ax
+ 0CD7  52				push dx
+ 0CD8  E8 FF06				call proc_hex_double
+ 0CDB  A3 1171 R			mov word ptr [txt_inode_ctim_h]+4, ax   
+ 0CDE  89 16 1173 R			mov word ptr [txt_inode_ctim_h]+6, dx
+ 0CE2  58				pop ax
+ 0CE3  E8 FEFB				call proc_hex_double
+ 0CE6  A3 116D R			mov word ptr [txt_inode_ctim_h], ax     
+ 0CE9  89 16 116F R			mov word ptr [txt_inode_ctim_h]+2, dx
+ 0CED  58				pop ax
+ 0CEE  5A				pop dx
+ 0CEF  E8 FBD9				call convert_from_epoch
+ 0CF2  A1 0EDA R			mov ax, word ptr [year]
+ 0CF5  BE 117F R			mov si, offset txt_inode_cyear
+					;mov cx, 4
+ 0CF8  B1 04				mov cl, 4
+ 0CFA  E8 FDA3				call proc_bin_to_decimal
+ 0CFD  A1 0EDC R			mov ax, word ptr [month]
+ 0D00  BE 117C R			mov si, offset txt_inode_cmonth
+ 0D03  B1 02				mov cl, 2
+ 0D05  E8 FD98				call proc_bin_to_decimal
+ 0D08  A1 0EDE R			mov ax, word ptr [day]
+ 0D0B  BE 1179 R			mov si, offset txt_inode_cday
+ 0D0E  B1 02				mov cl, 2
+ 0D10  E8 FD8D				call proc_bin_to_decimal
+ 0D13  A1 0EE0 R			mov ax, word ptr [hour]
+ 0D16  BE 1184 R			mov si, offset txt_inode_chour
+ 0D19  B1 02				mov cl, 2
+ 0D1B  E8 FD82				call proc_bin_to_decimal
+ 0D1E  A1 0EE2 R			mov ax, word ptr [minute]
+ 0D21  BE 1187 R			mov si, offset txt_inode_cminute
+ 0D24  B1 02				mov cl, 2
+ 0D26  E8 FD77				call proc_bin_to_decimal
+ 0D29  A1 0EE4 R			mov ax, word ptr [second]
+ 0D2C  BE 118A R			mov si, offset txt_inode_csecond
+ 0D2F  B1 02				mov cl, 2
+ 0D31  E8 FD6C				call proc_bin_to_decimal
+ 0D34  BE 0EB6 R			mov si, offset inode_mtim
+ 0D37  8B 04				mov ax, word ptr [SI]
+ 0D39  8B 54 02				mov dx, word ptr [SI]+2
+ 0D3C  52				push dx
+ 0D3D  50				push ax
+ 0D3E  52				push dx
+ 0D3F  E8 FE9F				call proc_hex_double
+ 0D42  A3 11A7 R			mov word ptr [txt_inode_mtim_h]+4, ax   
+ 0D45  89 16 11A9 R			mov word ptr [txt_inode_mtim_h]+6, dx
+ 0D49  58				pop ax
+ 0D4A  E8 FE94				call proc_hex_double
+ 0D4D  A3 11A3 R			mov word ptr [txt_inode_mtim_h], ax     
+ 0D50  89 16 11A5 R			mov word ptr [txt_inode_mtim_h]+2, dx
+ 0D54  58				pop ax
+ 0D55  5A				pop dx
+ 0D56  E8 FB72				call convert_from_epoch
+ 0D59  A1 0EDA R			mov ax, word ptr [year]
+ 0D5C  BE 11B5 R			mov si, offset txt_inode_myear
+					;mov cx, 4
+ 0D5F  B1 04				mov cl, 4
+ 0D61  E8 FD3C				call proc_bin_to_decimal
+ 0D64  A1 0EDC R			mov ax, word ptr [month]
+ 0D67  BE 11B2 R			mov si, offset txt_inode_mmonth
+ 0D6A  B1 02				mov cl, 2
+ 0D6C  E8 FD31				call proc_bin_to_decimal
+ 0D6F  A1 0EDE R			mov ax, word ptr [day]
+ 0D72  BE 11AF R			mov si, offset txt_inode_mday
+ 0D75  B1 02				mov cl, 2
+ 0D77  E8 FD26				call proc_bin_to_decimal
+ 0D7A  A1 0EE0 R			mov ax, word ptr [hour]
+ 0D7D  BE 11BA R			mov si, offset txt_inode_mhour
+ 0D80  B1 02				mov cl, 2
+ 0D82  E8 FD1B				call proc_bin_to_decimal
+ 0D85  A1 0EE2 R			mov ax, word ptr [minute]
+ 0D88  BE 11BD R			mov si, offset txt_inode_mminute
+ 0D8B  B1 02				mov cl, 2
+ 0D8D  E8 FD10				call proc_bin_to_decimal
+ 0D90  A1 0EE4 R			mov ax, word ptr [second]
+ 0D93  BE 11C0 R			mov si, offset txt_inode_msecond
+ 0D96  B1 02				mov cl, 2
+ 0D98  E8 FD05				call proc_bin_to_decimal
+ 0D9B  A1 0EBA R			mov ax, word ptr [inode_reserved]
+ 0D9E  E8 FE40				call proc_hex_double 
+ 0DA1  A3 11CE R			mov word ptr [txt_inode_reserved], ax   
+ 0DA4  89 16 11D0 R			mov word ptr [txt_inode_reserved]+2, dx
+ 0DA8				@@:
+ 0DA8  BE 1095 R			mov si, offset msg_inode_details        
+ 0DAB  E8 F2C1				call UNIX_PRINTMSG
+ 0DAE  C3				retn
+
+ 0DAF				show_inode endp
+
+
+ 0DAF				load_kernel proc near
+					; 06/03/2013
+					;
+					; loads unix kernel file       
+					;
+					; INPUT -> u_namep = unix kernel/file name address
+					; unix kernel will be loaded at 'kernel_loading_segment'
+					;
+
+ 0DAF				load_k_1:
+ 0DAF  E8 F960				call name_i
+ 0DB2  72 3E				jc short @f
+ 0DB4				load_k_2:
+ 0DB4  E8 FA64				call i_get
+ 0DB7  72 39				jc short @f
+
+ 0DB9  BB 0E9C R			mov bx, inode_flgs
+
+ 0DBC  F7 07 0010			test word ptr [BX], 10h ; executable file attribute bit
+ 0DC0  74 31				jz short load_k_stc 
+
+ 0DC2  BB 0EA0 R			mov bx, inode_size
+
+ 0DC5  33 C0				xor ax, ax 
+
+ 0DC7  39 07				cmp word ptr [BX], ax ; 0
+ 0DC9  76 28				jna short load_k_stc   
+
+ 0DCB  A3 0EC6 R			mov word ptr [u_off], ax  ; 0
+ 0DCE  A3 0EC4 R			mov word ptr [u_base], ax ; 0
+					
+					;mov bx, inode_size
+ 0DD1  8B 07				mov ax, word ptr [BX]
+ 0DD3  A3 0EC8 R			mov word ptr [u_count], ax
+
+ 0DD6  B8 1000				mov ax, kernel_loading_segment
+ 0DD9  A3 14F0 R			mov word ptr [EXTRA_SEGMENT], ax
+
+ 0DDC  A1 0ED6 R			mov ax, word ptr [ii]
+ 0DDF  E8 F9C7				call read_i     
+ 0DE2  72 09				jc short load_k_retn
+
+ 0DE4  8B 0E 0ECA R			mov cx, word ptr [u_nread]
+ 0DE8  BB 0EA0 R			mov bx, inode_size
+ 0DEB  3B 0F				cmp cx, word ptr [BX]
+
+ 0DED				load_k_retn:
+ 0DED  8C D8				mov ax, ds
+ 0DEF  A3 14F0 R			mov word ptr [EXTRA_SEGMENT], ax
+ 0DF2				@@:
+ 0DF2  C3				retn
+
+ 0DF3				load_k_stc:
+ 0DF3  F9				stc
+ 0DF4  C3				retn
+
+ 0DF5				load_kernel endp
+
+
+				align 2 ; 05/03/2013
+ 0DF6 00			PhysicalDriveNumber: db 0
+ 0DF7  00			db 0
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				;  messages
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 0DF8				UNIX_Welcome:
+ 0DF8  52 65 74 72 6F 20			db 'Retro UNIX 8086 v1', 0
+       55 4E 49 58 20 38
+       30 38 36 20 76 31
+       00
+ 0E0B				Boot_Msg:
+ 0E0B  0D 0A					db 0Dh, 0Ah
+ 0E0D  42 6F 6F 74 3A 20			db 'Boot: '
+ 0E13  00					db 0
+				align 2 ; 05/03/2013
+ 0E14				unix_cdrv:
+ 0E14  0D 0A					db 0Dh, 0Ah
+ 0E16				UNIX_FD_Name:
+ 0E16  66 64					db 'fd'
+ 0E18				UNIX_FD_Number:
+ 0E18  30 3A					db '0:'
+
+ 0E1A 2F			unix_cdir:      db '/'
+ 0E1B  0025 [					db 37 dup(0)
+        00
+       ]
+
+ 0E40 0000			CDirOffset:     dw 0
+
+ 0E42 0000			CursorColumn:   dw 0
+
+ 0E44 0000			pdir:           dw 0 
+
+ 0E46 0000			arg:            dw 0
+
+ 0E48				msg_unix_drv_read_error:
+ 0E48  0D 0A					db 0Dh, 0Ah
+ 0E4A  44 72 69 76 65 20			db "Drive not ready or read error!"
+       6E 6F 74 20 72 65
+       61 64 79 20 6F 72
+       20 72 65 61 64 20
+       65 72 72 6F 72 21
+ 0E68  0D 0A 00					db 0Dh, 0Ah, 0
+
+ 0E6B				Msg_StartupFile_Name:
+ 0E6B  0D 0A					db 0Dh, 0Ah
+ 0E6D  53 74 61 72 74 75			db "Startup File Name : ", 0
+       70 20 46 69 6C 65
+       20 4E 61 6D 65 20
+       3A 20 00
+ 0E82				error_msg:
+ 0E82  0D 0A					db 0Dh, 0Ah
+ 0E84  45 72 72 6F 72 20			db 'Error !'
+       21
+ 0E8B				UNIX_CRLF:
+ 0E8B  0D 0A 00					db 0Dh, 0Ah, 0
+
+ 0E8E 0000			RetryCount:     dw 0
+
+ 0E90 20			DirFileName:    db 20h ; 06/01/2013
+
+ 0E91  0009 [			BOOT_FILE_NAME: db 9 dup(0)
+        00
+       ]
+
+ 0E9A 0000			uf_i_number: dw 0 ; 25/11/2012
+
+ 0E9C				bootfile_inode: 
+ 0E9C				inode:
+ 0E9C 801E			inode_flgs:     dw 801Eh ; Flags (1000000000011110b)
+ 0E9E 01			inode_nlks:     db 1    ; number of links 
+ 0E9F 00			inode_uid:      db 0    ; user ID (0 = root)
+ 0EA0 0000			inode_size:     dw 0    ; file size
+ 0EA2  0008 [			inode_dskp:     dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 0EB2 00000000			inode_ctim:     dd 0    ; creation date & time
+ 0EB6 00000000			inode_mtim:     dd 0    ; modification date & time
+ 0EBA 0000			inode_reserved: dw 0    ; unused
+
+				align 2 ; 05/03/2013
+ 0EBC  FF			db 0FFh
+
+ 0EBD				U:
+ 0EBD 00			u_uid: db 0
+ 0EBE 0029			u_cdir: dw ROOT_DIR_INODE_NUMBER
+ 0EC0 0000			u_namep: dw 0
+ 0EC2 0000			u_dirp: dw 0
+ 0EC4 0000			u_base: dw 0
+ 0EC6 0000			u_off: dw 0
+ 0EC8 0000			u_count: dw 0
+ 0ECA 0000			u_nread: dw 0
+ 0ECC  000A [			u_dirbuf: db 10 dup(0)
+        00
+       ]
+
+ 0ED6 0000			ii: dw 0
+ 0ED8 0000			buff_s: dw 0
+
+ 0EDA 07B2			year: dw 1970
+ 0EDC 0001			month: dw 1
+ 0EDE 0001			day: dw 1
+ 0EE0 0000			hour: dw 0
+ 0EE2 0000			minute: dw 0
+ 0EE4 0000			second: dw 0
+
+ 0EE6				DMonth:
+ 0EE6  0000			dw 0
+ 0EE8  001F			dw 31
+ 0EEA  003B			dw 59
+ 0EEC  005A			dw 90
+ 0EEE  0078			dw 120
+ 0EF0  0097			dw 151
+ 0EF2  00B5			dw 181
+ 0EF4  00D4			dw 212
+ 0EF6  00F3			dw 243
+ 0EF8  0111			dw 273
+ 0EFA  0130			dw 304
+ 0EFC  014E			dw 334
+
+				; 25/11/2012
+ 0EFE				str_inode_number:
+ 0EFE  0D 0A					db 0Dh, 0Ah
+ 0F00  53 74 61 72 74 75			db 'Startup File I-Number: ', 0
+       70 20 46 69 6C 65
+       20 49 2D 4E 75 6D
+       62 65 72 3A 20 00
+ 0F18				Decimal_i_no_str:               
+ 0F18  0006 [					db 6 dup (0)
+        00
+       ]
+
+ 0F1E				Str_startup_file_size:
+ 0F1E  0D 0A					db 0Dh, 0Ah
+ 0F20  53 74 61 72 74 75			db 'Startup File Size : ', 0
+       70 20 46 69 6C 65
+       20 53 69 7A 65 20
+       3A 20 00
+ 0F35				Str_Bytes:
+ 0F35  20 62 79 74 65 73			db ' bytes', 0
+       00
+
+ 0F3C  0006 [			Decimal_size_str: db 6 dup (0)
+        00
+       ]
+
+ 0F42				Str_sf_date_time:
+ 0F42  0D 0A					db 0Dh, 0Ah
+ 0F44  43 72 65 61 74 69			db 'Creating Date & Time    : '
+       6E 67 20 44 61 74
+       65 20 26 20 54 69
+       6D 65 20 20 20 20
+       3A 20
+ 0F5E 30 30			Str_cday:       db '00'
+ 0F60  2F					db '/'
+ 0F61 30 30			Str_cmonth:     db '00'
+ 0F63  2F					db '/'
+ 0F64 30 30 30 30		Str_cyear:      db '0000'
+ 0F68  20 20					db 20h, 20h
+ 0F6A 30 30			Str_chour:      db '00'
+ 0F6C  3A					db ':'
+ 0F6D 30 30			Str_cminute:    db '00'
+ 0F6F  3A					db ':'
+ 0F70 30 30			Str_csecond:    db '00'
+ 0F72  0D 0A					db 0Dh, 0Ah
+ 0F74  4C 61 73 74 20 4D			db 'Last Modif. Date & Time : '
+       6F 64 69 66 2E 20
+       44 61 74 65 20 26
+       20 54 69 6D 65 20
+       3A 20
+ 0F8E 30 30			Str_mday:       db '00'
+ 0F90  2F					db '/'
+ 0F91 30 30			Str_mmonth:     db '00'
+ 0F93  2F					db '/'
+ 0F94 30 30 30 30		Str_myear:      db '0000'
+ 0F98  20 20					db 20h, 20h
+ 0F9A 30 30			Str_mhour:      db '00'
+ 0F9C  3A					db ':'
+ 0F9D 30 30			Str_mminute:    db '00'
+ 0F9F  3A					db ':'
+ 0FA0 30 30			Str_msecond:    db '00'
+ 0FA2  0D 0A 00					db 0Dh, 0Ah, 0
+
+				;23/02/2013
+ 0FA5 FF			list_count: db 0FFh
+				; 20/01/2013
+ 0FA6 00			ls_option: db 0
+				; 21/01/2013
+ 0FA7  000A [			dec_num: db 10 dup(20h) ; 02/03/2012, 3 bytes -> 10 bytes
+        20
+       ]
+ 0FB1  00			db 0
+
+				;30/12/2012
+ 0FB2				DotDot:
+ 0FB2  2E			db '.'
+ 0FB3				Dot:
+ 0FB3  2E			db '.'
+ 0FB4  00			db 0
+
+				;16/02/2013
+ 0FB5				msgVolume_Info:
+ 0FB5  0D 0A					db 0Dh, 0Ah
+ 0FB7  52 65 74 72 6F 20			db "Retro UNIX 8086 v1 (RUFS) File System", 0Dh, 0Ah
+       55 4E 49 58 20 38
+       30 38 36 20 76 31
+       20 28 52 55 46 53
+       29 20 46 69 6C 65
+       20 53 79 73 74 65
+       6D 0D 0A
+ 0FDE  62 79 20 45 72 64			db "by Erdogan Tan (2013-2022)"
+       6F 67 61 6E 20 54
+       61 6E 20 28 32 30
+       31 33 2D 32 30 32
+       32 29
+ 0FF8  0D 0A 0D 0A				db 0Dh, 0Ah, 0Dh, 0Ah
+ 0FFC  56 6F 6C 75 6D 65			db "Volume Serial No: "
+       20 53 65 72 69 61
+       6C 20 4E 6F 3A 20
+ 100E				msgVolume_Serial:
+ 100E  30 30 30 30 2D 30			db "0000-0000h"
+       30 30 30 68
+ 1018  0D 0A 00					db 0Dh, 0Ah, 0
+ 101B 56 6F 6C 75 6D 65		msgVol_Size_Hdr:db "Volume Size : ", 0
+       20 53 69 7A 65 20
+       3A 20 00
+ 102A				msgVolume_Size: ; db "0000" 
+ 102A  20 62 6C 6F 63 6B			db " blocks", 0Dh, 0Ah, 0
+       73 0D 0A 00
+ 1034 46 72 65 65 20 43		msgVol_freeblocks_Hdr:db "Free Count  : ", 0
+       6F 75 6E 74 20 20
+       3A 20 00
+ 1043				msgVolume_freeblocks : ;db "0000" 
+ 1043  20 62 6C 6F 63 6B			db " blocks", 0Dh, 0Ah, 0                
+       73 0D 0A 00
+ 104D				msgVol_icount_Hdr:
+ 104D  23 20 6F 66 20 49			db "# of Inodes : ", 0
+       6E 6F 64 65 73 20
+       3A 20 00
+ 105C				msgVolume_icount:       ; db "0000" 
+ 105C  2B 34 30 0D 0A 00			db "+40", 0Dh, 0Ah, 0
+ 1062 46 72 65 65 20 49		msgVol_free_icount_Hdr:db 'Free Inodes : ', 0
+       6E 6F 64 65 73 20
+       3A 20 00
+ 1071				msgVolume_free_icount : ;db "0000" 
+ 1071  0D 0A 00					db 0Dh, 0Ah, 0
+ 1074				NotFound_msg:
+ 1074  0D 0A					db 0Dh, 0Ah
+ 1076  4E 6F 74 20 66 6F			db "Not found !"
+       75 6E 64 20 21
+ 1081  0D 0A 00					db 0Dh, 0Ah, 0
+ 1084				msgINumber:
+ 1084  0D 0A					db 0Dh, 0Ah
+ 1086  49 6E 6F 64 65 20			db "Inode Number :", 0
+       4E 75 6D 62 65 72
+       20 3A 00
+
+ 1095				msg_inode_details:
+ 1095  0D 0A					db 0Dh, 0Ah
+ 1097  55 4E 49 58 20 56			db "UNIX V1 I-NODE STRUCTURE DETAILS OF I-NODE "
+       31 20 49 2D 4E 4F
+       44 45 20 53 54 52
+       55 43 54 55 52 45
+       20 44 45 54 41 49
+       4C 53 20 4F 46 20
+       49 2D 4E 4F 44 45
+       20
+ 10C2				txt_inode_number:
+ 10C2  30 30 30 30 68				db "0000h"
+ 10C7  0D 0A 0D 0A				db 0Dh, 0Ah, 0Dh, 0Ah
+ 10CB  46 6C 61 67 73 20			db "Flags : "
+       3A 20
+ 10D3				txt_inode_flags_h:
+ 10D3  30 30 30 30 68				db "0000h"
+ 10D8  20 20					db 20h, 20h
+ 10DA  5B					db "["
+ 10DB				txt_inode_flags_b:
+ 10DB  30 30 30 30 30 30			db "0000000000000000b"
+       30 30 30 30 30 30
+       30 30 30 30 62
+ 10EC  5D					db "]"
+ 10ED  0D 0A					db 0Dh, 0Ah
+ 10EF  23 20 6F 66 20 4C			db "# of Links : "
+       69 6E 6B 73 20 3A
+       20
+ 10FC				txt_inode_nlks:
+ 10FC  30 30 68					db "00h"
+ 10FF  0D 0A					db 0Dh, 0Ah
+ 1101  55 73 65 72 20 49			db "User ID : "
+       44 20 3A 20
+ 110B				txt_inode_uid:
+ 110B  30 30 68					db "00h"
+ 110E  0D 0A					db 0Dh, 0Ah
+ 1110  53 69 7A 65 20 3A			db "Size : "
+       20
+ 1117				txt_inode_size:
+ 1117  30 30 30 30 68				db "0000h"
+ 111C  0D 0A					db 0Dh, 0Ah
+ 111E  44 69 73 6B 20 42			db "Disk Blocks : "
+       6C 6F 63 6B 73 20
+       3A 20
+ 112C				txt_inode_dskp:         
+ 112C  30 30 30 30 68 20			db "0000h 0000h 0000h 0000h "
+       30 30 30 30 68 20
+       30 30 30 30 68 20
+       30 30 30 30 68 20
+ 1144  30 30 30 30 68 20			db "0000h 0000h 0000h 0000h"
+       30 30 30 30 68 20
+       30 30 30 30 68 20
+       30 30 30 30 68
+ 115B  0D 0A					db 0Dh, 0Ah
+ 115D  43 72 65 61 74 69			db "Creation Time : "
+       6F 6E 20 54 69 6D
+       65 20 3A 20
+ 116D				txt_inode_ctim_h:
+ 116D  30 30 30 30 30 30			db "00000000h"
+       30 30 68
+ 1176  20 20					db 20h, 20h
+ 1178  5B					db "["
+ 1179				txt_inode_cday:
+ 1179  30 30					db "00"
+ 117B  2F					db "/"
+ 117C				txt_inode_cmonth:
+ 117C  30 30					db "00"
+ 117E  2F					db "/"
+ 117F				txt_inode_cyear:
+ 117F  30 30 30 30				db "0000"
+ 1183  2C					db ","
+ 1184				txt_inode_chour:
+ 1184  30 30					db "00"
+ 1186  3A					db ":"
+ 1187				txt_inode_cminute:
+ 1187  30 30					db "00"
+ 1189  3A					db ":"
+ 118A				txt_inode_csecond:              
+ 118A  30 30					db "00"
+ 118C  5D					db "]"
+ 118D  0D 0A					db 0Dh, 0Ah
+ 118F  4D 6F 64 69 66 69			db "Modification Time : "
+       63 61 74 69 6F 6E
+       20 54 69 6D 65 20
+       3A 20
+ 11A3				txt_inode_mtim_h:
+ 11A3  30 30 30 30 30 30			db "00000000h"
+       30 30 68
+ 11AC  20 20					db 20h, 20h
+ 11AE  5B					db "["
+ 11AF				txt_inode_mday:         
+ 11AF  30 30					db "00"
+ 11B1  2F					db "/"
+ 11B2				txt_inode_mmonth:
+ 11B2  30 30					db "00"
+ 11B4  2F					db "/"
+ 11B5				txt_inode_myear:
+ 11B5  30 30 30 30				db "0000"
+ 11B9  2C					db ","
+ 11BA				txt_inode_mhour:
+ 11BA  30 30					db "00"
+ 11BC  3A					db ":"
+ 11BD				txt_inode_mminute:
+ 11BD  30 30					db "00"
+ 11BF  3A					db ":"
+ 11C0				txt_inode_msecond:              
+ 11C0  30 30					db "00"
+ 11C2  5D					db "]"
+ 11C3  0D 0A					db 0Dh, 0Ah
+ 11C5  55 6E 75 73 65 64			db "Unused : "
+       20 3A 20
+ 11CE				txt_inode_reserved:             
+ 11CE  30 30 30 30 68				db "0000h"
+ 11D3  0D 0A 00					db 0Dh, 0Ah, 0
+
+ 11D6				Boot_Commands: ; 25/02/2013
+ 11D6  0D 0A			db 0Dh, 0Ah
+ 11D8  42 4F 4F 54 20 43	db "BOOT COMMANDS", 0Dh, 0Ah
+       4F 4D 4D 41 4E 44
+       53 0D 0A
+ 11E7  64 69 72 20 3C 64	db "dir <directory name>   : print directory entries without details", 0Dh, 0Ah 
+       69 72 65 63 74 6F
+       72 79 20 6E 61 6D
+       65 3E 20 20 20 3A
+       20 70 72 69 6E 74
+       20 64 69 72 65 63
+       74 6F 72 79 20 65
+       6E 74 72 69 65 73
+       20 77 69 74 68 6F
+       75 74 20 64 65 74
+       61 69 6C 73 0D 0A
+ 1229  6C 73 20 3C 64 69	db "ls <directory name>    : print directory entries, ", 27h, "/",  27h," means entry is directory", 0Dh, 0Ah
+       72 65 63 74 6F 72
+       79 20 6E 61 6D 65
+       3E 20 20 20 20 3A
+       20 70 72 69 6E 74
+       20 64 69 72 65 63
+       74 6F 72 79 20 65
+       6E 74 72 69 65 73
+       2C 20 27 2F 27 20
+       6D 65 61 6E 73 20
+       65 6E 74 72 79 20
+       69 73 20 64 69 72
+       65 63 74 6F 72 79
+       0D 0A
+ 1279  6C 73 20 2D 6C 20	db "ls -l <directory name> : print directory entries with details", 0Dh, 0Ah
+       3C 64 69 72 65 63
+       74 6F 72 79 20 6E
+       61 6D 65 3E 20 3A
+       20 70 72 69 6E 74
+       20 64 69 72 65 63
+       74 6F 72 79 20 65
+       6E 74 72 69 65 73
+       20 77 69 74 68 20
+       64 65 74 61 69 6C
+       73 0D 0A
+ 12B8  63 64 20 3C 64 69	db "cd <directory name>    : change directory", 0Dh, 0Ah
+       72 65 63 74 6F 72
+       79 20 6E 61 6D 65
+       3E 20 20 20 20 3A
+       20 63 68 61 6E 67
+       65 20 64 69 72 65
+       63 74 6F 72 79 0D
+       0A
+ 12E3  73 68 6F 77 20 3C	db "show <file name>       : show file, print/display file contents", 0Dh, 0Ah
+       66 69 6C 65 20 6E
+       61 6D 65 3E 20 20
+       20 20 20 20 20 3A
+       20 73 68 6F 77 20
+       66 69 6C 65 2C 20
+       70 72 69 6E 74 2F
+       64 69 73 70 6C 61
+       79 20 66 69 6C 65
+       20 63 6F 6E 74 65
+       6E 74 73 0D 0A
+ 1324  69 6E 6F 64 65 20	db "inode <inode number>   : print inode details for (decimal) inode number", 0Dh, 0Ah
+       3C 69 6E 6F 64 65
+       20 6E 75 6D 62 65
+       72 3E 20 20 20 3A
+       20 70 72 69 6E 74
+       20 69 6E 6F 64 65
+       20 64 65 74 61 69
+       6C 73 20 66 6F 72
+       20 28 64 65 63 69
+       6D 61 6C 29 20 69
+       6E 6F 64 65 20 6E
+       75 6D 62 65 72 0D
+       0A
+ 136D  6E 61 6D 65 69 20	db "namei <file name>      : print inode number of file (as decimal)", 0Dh, 0Ah 
+       3C 66 69 6C 65 20
+       6E 61 6D 65 3E 20
+       20 20 20 20 20 3A
+       20 70 72 69 6E 74
+       20 69 6E 6F 64 65
+       20 6E 75 6D 62 65
+       72 20 6F 66 20 66
+       69 6C 65 20 28 61
+       73 20 64 65 63 69
+       6D 61 6C 29 0D 0A
+ 13AF  66 73 20 20 20 20	db "fs                     : print (current) unix fs (super block) info", 0Dh, 0Ah
+       20 20 20 20 20 20
+       20 20 20 20 20 20
+       20 20 20 20 20 3A
+       20 70 72 69 6E 74
+       20 28 63 75 72 72
+       65 6E 74 29 20 75
+       6E 69 78 20 66 73
+       20 28 73 75 70 65
+       72 20 62 6C 6F 63
+       6B 29 20 69 6E 66
+       6F 0D 0A
+ 13F4  62 6F 6F 74 66 69	db "bootfile               : print startup/boot file details", 0Dh, 0Ah
+       6C 65 20 20 20 20
+       20 20 20 20 20 20
+       20 20 20 20 20 3A
+       20 70 72 69 6E 74
+       20 73 74 61 72 74
+       75 70 2F 62 6F 6F
+       74 20 66 69 6C 65
+       20 64 65 74 61 69
+       6C 73 0D 0A
+ 142E  72 65 62 6F 6F 74	db "reboot                 : reboot (int 19h)", 0Dh, 0Ah
+       20 20 20 20 20 20
+       20 20 20 20 20 20
+       20 20 20 20 20 3A
+       20 72 65 62 6F 6F
+       74 20 28 69 6E 74
+       20 31 39 68 29 0D
+       0A
+ 1459  3F 20 20 20 20 20	db "?                      : print boot commands summary (as above)", 0Dh, 0Ah, 0
+       20 20 20 20 20 20
+       20 20 20 20 20 20
+       20 20 20 20 20 3A
+       20 70 72 69 6E 74
+       20 62 6F 6F 74 20
+       63 6F 6D 6D 61 6E
+       64 73 20 73 75 6D
+       6D 61 72 79 20 28
+       61 73 20 61 62 6F
+       76 65 29 0D 0A 00
+
+				align 2  ; 05/03/2013
+ 149C  004A [			CommandBuffer:  db 74 dup(0)
+        00
+       ]
+ 14E6 00			unix_reboot:    db 0
+ 14E7 00			def_kernel:     db 0
+ 14E8 0000			BSBUFFER:       dw 0
+ 14EA 0000			SUPERBLOCK:     dw 0
+ 14EC 0000			DISKBUFFER:     dw 0
+ 14EE 0000			FILEBUFFER:     dw 0
+ 14F0 0000			EXTRA_SEGMENT:  dw 0 ; 06/03/2013
+				; 07/03/2013
+ 14F2 0222			waiting_count:  dw 182*3 ; 30 seconds
+
+				align 16 ; 05/03/2013
+
+ 1500				EndOfFile:
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				;  buffers
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				;BSBUFFER:      db 512 dup(0)
+				;SUPERBLOCK:    db 512 dup(0)
+				;DISKBUFFER:    db 512 dup(0)
+				;FILEBUFFER:    db 512 dup(0)
+				;;;
+				;;BootStack:
+
+ 1500				BOOT1  ends
+
+					  end  START_CODE
+Microsoft (R) Macro Assembler Version 6.14.8444		    04/04/22 15:12:09
+boot1.asm						     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+BOOT1  . . . . . . . . . . . . .	16 Bit	 1500	  Para	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+UNIX_PRINTMSG  . . . . . . . . .	P Near	 006F	  BOOT1	Length= 000F Private
+command_interpreter  . . . . . .	P Near	 01C9	  BOOT1	Length= 0219 Private
+convert_from_epoch . . . . . . .	P Near	 08CB	  BOOT1	Length= 007C Private
+dsk_rd . . . . . . . . . . . . .	P Near	 085D	  BOOT1	Length= 0036 Private
+find_bfn . . . . . . . . . . . .	P Near	 0968	  BOOT1	Length= 003D Private
+i_calc . . . . . . . . . . . . .	P Near	 082F	  BOOT1	Length= 002E Private
+i_get  . . . . . . . . . . . . .	P Near	 081B	  BOOT1	Length= 0014 Private
+load_kernel  . . . . . . . . . .	P Near	 0DAF	  BOOT1	Length= 0046 Private
+m_get  . . . . . . . . . . . . .	P Near	 0893	  BOOT1	Length= 0038 Private
+name_i . . . . . . . . . . . . .	P Near	 0712	  BOOT1	Length= 0097 Private
+print_decimal_number . . . . . .	P Near	 0AC3	  BOOT1	Length= 004B Private
+print_directory_list . . . . . .	P Near	 045E	  BOOT1	Length= 01FF Private
+print_volume_info  . . . . . . .	P Near	 0B0E	  BOOT1	Length= 00D3 Private
+proc_bin_to_decimal  . . . . . .	P Near	 0AA0	  BOOT1	Length= 0023 Private
+proc_display_startupfile_info  .	P Near	 09A5	  BOOT1	Length= 00FB Private
+proc_div32 . . . . . . . . . . .	P Near	 095B	  BOOT1	Length= 000D Private
+proc_hex_double  . . . . . . . .	P Near	 0BE1	  BOOT1	Length= 0039 Private
+proc_mul32 . . . . . . . . . . .	P Near	 0947	  BOOT1	Length= 0014 Private
+proc_rw_char . . . . . . . . . .	P Near	 0142	  BOOT1	Length= 0087 Private
+proc_start . . . . . . . . . . .	P Near	 0000	  BOOT1	Length= 006F Private
+read_i . . . . . . . . . . . . .	P Near	 07A9	  BOOT1	Length= 0072 Private
+show_file  . . . . . . . . . . .	P Near	 0677	  BOOT1	Length= 009B Private
+show_inode . . . . . . . . . . .	P Near	 0C1A	  BOOT1	Length= 0195 Private
+sys_chdir  . . . . . . . . . . .	P Near	 065D	  BOOT1	Length= 001A Private
+unix_prompt  . . . . . . . . . .	P Near	 007E	  BOOT1	Length= 00C4 Private
+update_cdir_string . . . . . . .	P Near	 03E2	  BOOT1	Length= 007C Private
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+BOOT_FILE_NAME . . . . . . . . .	L Near	 0E91	  BOOT1	
+BSBUFFER . . . . . . . . . . . .	L Near	 14E8	  BOOT1	
+Boot_Commands  . . . . . . . . .	L Near	 11D6	  BOOT1	
+Boot_Msg . . . . . . . . . . . .	L Near	 0E0B	  BOOT1	
+CDirOffset . . . . . . . . . . .	L Near	 0E40	  BOOT1	
+CommandBuffer  . . . . . . . . .	L Near	 149C	  BOOT1	
+CursorColumn . . . . . . . . . .	L Near	 0E42	  BOOT1	
+DISKBUFFER . . . . . . . . . . .	L Near	 14EC	  BOOT1	
+DMonth . . . . . . . . . . . . .	L Near	 0EE6	  BOOT1	
+Decimal_i_no_str . . . . . . . .	L Near	 0F18	  BOOT1	
+Decimal_size_str . . . . . . . .	L Near	 0F3C	  BOOT1	
+DirFileName  . . . . . . . . . .	L Near	 0E90	  BOOT1	
+DotDot . . . . . . . . . . . . .	L Near	 0FB2	  BOOT1	
+Dot  . . . . . . . . . . . . . .	L Near	 0FB3	  BOOT1	
+EXTRA_SEGMENT  . . . . . . . . .	L Near	 14F0	  BOOT1	
+EndOfFile  . . . . . . . . . . .	L Near	 1500	  BOOT1	
+FILEBUFFER . . . . . . . . . . .	L Near	 14EE	  BOOT1	
+Msg_StartupFile_Name . . . . . .	L Near	 0E6B	  BOOT1	
+NotFound_msg . . . . . . . . . .	L Near	 1074	  BOOT1	
+PhysicalDriveNumber  . . . . . .	L Near	 0DF6	  BOOT1	
+ROOT_DIR_INODE_NUMBER  . . . . .	Number	 0029h	 
+RetryCount . . . . . . . . . . .	L Near	 0E8E	  BOOT1	
+START_CODE . . . . . . . . . . .	L Near	 0000	  BOOT1	
+SUPERBLOCK . . . . . . . . . . .	L Near	 14EA	  BOOT1	
+Str_Bytes  . . . . . . . . . . .	L Near	 0F35	  BOOT1	
+Str_cday . . . . . . . . . . . .	L Near	 0F5E	  BOOT1	
+Str_chour  . . . . . . . . . . .	L Near	 0F6A	  BOOT1	
+Str_cminute  . . . . . . . . . .	L Near	 0F6D	  BOOT1	
+Str_cmonth . . . . . . . . . . .	L Near	 0F61	  BOOT1	
+Str_csecond  . . . . . . . . . .	L Near	 0F70	  BOOT1	
+Str_cyear  . . . . . . . . . . .	L Near	 0F64	  BOOT1	
+Str_mday . . . . . . . . . . . .	L Near	 0F8E	  BOOT1	
+Str_mhour  . . . . . . . . . . .	L Near	 0F9A	  BOOT1	
+Str_mminute  . . . . . . . . . .	L Near	 0F9D	  BOOT1	
+Str_mmonth . . . . . . . . . . .	L Near	 0F91	  BOOT1	
+Str_msecond  . . . . . . . . . .	L Near	 0FA0	  BOOT1	
+Str_myear  . . . . . . . . . . .	L Near	 0F94	  BOOT1	
+Str_sf_date_time . . . . . . . .	L Near	 0F42	  BOOT1	
+Str_startup_file_size  . . . . .	L Near	 0F1E	  BOOT1	
+UNIX_CRLF  . . . . . . . . . . .	L Near	 0E8B	  BOOT1	
+UNIX_FD_Name . . . . . . . . . .	L Near	 0E16	  BOOT1	
+UNIX_FD_Number . . . . . . . . .	L Near	 0E18	  BOOT1	
+UNIX_PRINTMSG_LOOP . . . . . . .	L Near	 006F	  BOOT1	
+UNIX_PRINTMSG_OK . . . . . . . .	L Near	 007D	  BOOT1	
+UNIX_Welcome . . . . . . . . . .	L Near	 0DF8	  BOOT1	
+U  . . . . . . . . . . . . . . .	L Near	 0EBD	  BOOT1	
+arg  . . . . . . . . . . . . . .	L Near	 0E46	  BOOT1	
+bootfile_inode . . . . . . . . .	L Near	 0E9C	  BOOT1	
+bsDriveNumber  . . . . . . . . .	Number	 000Ch	 
+bsFDSign . . . . . . . . . . . .	Number	 000Ah	 
+bsFSystemID  . . . . . . . . . .	Number	 0002h	 
+bsHeads  . . . . . . . . . . . .	Number	 000Fh	 
+bsInfoEndsign  . . . . . . . . .	Number	 0014h	 
+bsReserved . . . . . . . . . . .	Number	 000Dh	 
+bsSecPerTrack  . . . . . . . . .	Number	 000Eh	 
+bsTracks . . . . . . . . . . . .	Number	 0010h	 
+bsVolumeSerial . . . . . . . . .	Number	 0006h	 
+bs_bf_inode_number . . . . . . .	Number	 0012h	 
+buff_s . . . . . . . . . . . . .	L Near	 0ED8	  BOOT1	
+char_return  . . . . . . . . . .	L Near	 0191	  BOOT1	
+ci_cd_getarg . . . . . . . . . .	L Near	 0250	  BOOT1	
+ci_error . . . . . . . . . . . .	L Near	 0204	  BOOT1	
+ci_move_bfn_1  . . . . . . . . .	L Near	 03CB	  BOOT1	
+ci_move_bfn_2  . . . . . . . . .	L Near	 03D4	  BOOT1	
+cl1  . . . . . . . . . . . . . .	L Near	 020B	  BOOT1	
+cl2  . . . . . . . . . . . . . .	L Near	 0219	  BOOT1	
+cl3  . . . . . . . . . . . . . .	L Near	 01CA	  BOOT1	
+cl4  . . . . . . . . . . . . . .	L Near	 031A	  BOOT1	
+cl5  . . . . . . . . . . . . . .	L Near	 027A	  BOOT1	
+cl6  . . . . . . . . . . . . . .	L Near	 0380	  BOOT1	
+cl8  . . . . . . . . . . . . . .	L Near	 039C	  BOOT1	
+day  . . . . . . . . . . . . . .	L Near	 0EDE	  BOOT1	
+dec_num  . . . . . . . . . . . .	L Near	 0FA7	  BOOT1	
+def_kernel . . . . . . . . . . .	L Near	 14E7	  BOOT1	
+dir_getarg . . . . . . . . . . .	L Near	 01EA	  BOOT1	
+dir_namei  . . . . . . . . . . .	L Near	 01F5	  BOOT1	
+dir_print  . . . . . . . . . . .	L Near	 01FF	  BOOT1	
+dsk_rd_1 . . . . . . . . . . . .	L Near	 086D	  BOOT1	
+dsk_rd_2 . . . . . . . . . . . .	L Near	 088E	  BOOT1	
+dsk_rd_3 . . . . . . . . . . . .	L Near	 0892	  BOOT1	
+error_msg  . . . . . . . . . . .	L Near	 0E82	  BOOT1	
+fs_info_print  . . . . . . . . .	L Near	 0276	  BOOT1	
+hour . . . . . . . . . . . . . .	L Near	 0EE0	  BOOT1	
+icalc_1  . . . . . . . . . . . .	L Near	 0841	  BOOT1	
+icalc_2  . . . . . . . . . . . .	L Near	 085C	  BOOT1	
+iget_1 . . . . . . . . . . . . .	L Near	 0821	  BOOT1	
+iget_2 . . . . . . . . . . . . .	L Near	 0821	  BOOT1	
+iget_3 . . . . . . . . . . . . .	L Near	 082B	  BOOT1	
+iget_4 . . . . . . . . . . . . .	L Near	 082E	  BOOT1	
+ii . . . . . . . . . . . . . . .	L Near	 0ED6	  BOOT1	
+inode_ctim . . . . . . . . . . .	L Near	 0EB2	  BOOT1	
+inode_dskp . . . . . . . . . . .	L Near	 0EA2	  BOOT1	
+inode_flgs . . . . . . . . . . .	L Near	 0E9C	  BOOT1	
+inode_getarg1  . . . . . . . . .	L Near	 02F7	  BOOT1	
+inode_getarg2  . . . . . . . . .	L Near	 0305	  BOOT1	
+inode_mtim . . . . . . . . . . .	L Near	 0EB6	  BOOT1	
+inode_nlks . . . . . . . . . . .	L Near	 0E9E	  BOOT1	
+inode_reserved . . . . . . . . .	L Near	 0EBA	  BOOT1	
+inode_size . . . . . . . . . . .	L Near	 0EA0	  BOOT1	
+inode_uid  . . . . . . . . . . .	L Near	 0E9F	  BOOT1	
+inode  . . . . . . . . . . . . .	L Near	 0E9C	  BOOT1	
+kernel_loading_segment . . . . .	Number	 1000h	 
+list_count . . . . . . . . . . .	L Near	 0FA5	  BOOT1	
+load_k_1 . . . . . . . . . . . .	L Near	 0DAF	  BOOT1	
+load_k_2 . . . . . . . . . . . .	L Near	 0DB4	  BOOT1	
+load_k_retn  . . . . . . . . . .	L Near	 0DED	  BOOT1	
+load_k_stc . . . . . . . . . . .	L Near	 0DF3	  BOOT1	
+loc_arrow  . . . . . . . . . . .	L Near	 0185	  BOOT1	
+loc_back . . . . . . . . . . . .	L Near	 0152	  BOOT1	
+loc_beep . . . . . . . . . . . .	L Near	 015E	  BOOT1	
+loc_call_unix_prompt . . . . . .	L Near	 006A	  BOOT1	
+loc_cmd_bootfile . . . . . . . .	L Near	 03A3	  BOOT1	
+loc_cmd_cd . . . . . . . . . . .	L Near	 024A	  BOOT1	
+loc_cmd_dir  . . . . . . . . . .	L Near	 01D4	  BOOT1	
+loc_cmd_fs . . . . . . . . . . .	L Near	 026E	  BOOT1	
+loc_cmd_inode  . . . . . . . . .	L Near	 02E6	  BOOT1	
+loc_cmd_ls . . . . . . . . . . .	L Near	 021E	  BOOT1	
+loc_cmd_namei  . . . . . . . . .	L Near	 0287	  BOOT1	
+loc_cmd_reboot . . . . . . . . .	L Near	 0385	  BOOT1	
+loc_cmd_show . . . . . . . . . .	L Near	 031A	  BOOT1	
+loc_copy_bootsector  . . . . . .	L Near	 0018	  BOOT1	
+loc_drv_read_error . . . . . . .	L Near	 0041	  BOOT1	
+loc_escape . . . . . . . . . . .	L Near	 01C3	  BOOT1	
+loc_find_bfn_1 . . . . . . . . .	L Near	 0979	  BOOT1	
+loc_find_bfn_2 . . . . . . . . .	L Near	 09A2	  BOOT1	
+loc_find_bfn_3 . . . . . . . . .	L Near	 099D	  BOOT1	
+loc_find_bfn_retn  . . . . . . .	L Near	 09A0	  BOOT1	
+loc_load_kernel  . . . . . . . .	L Near	 0344	  BOOT1	
+loc_read_superblock  . . . . . .	L Near	 002E	  BOOT1	
+loc_rediv_NumberInput  . . . . .	L Near	 0AAD	  BOOT1	
+loc_reset_str_NumberInput  . . .	L Near	 0AA0	  BOOT1	
+loc_unix_welcome . . . . . . . .	L Near	 004D	  BOOT1	
+loc_write_it . . . . . . . . . .	L Near	 017B	  BOOT1	
+loop_popcx_NumberInput . . . . .	L Near	 0ABA	  BOOT1	
+ls_getarg1 . . . . . . . . . . .	L Near	 0229	  BOOT1	
+ls_getarg2 . . . . . . . . . . .	L Near	 0230	  BOOT1	
+ls_getarg3 . . . . . . . . . . .	L Near	 01F1	  BOOT1	
+ls_getarg4 . . . . . . . . . . .	L Near	 0239	  BOOT1	
+ls_option  . . . . . . . . . . .	L Near	 0FA6	  BOOT1	
+mget_0 . . . . . . . . . . . . .	L Near	 0893	  BOOT1	
+mget_1 . . . . . . . . . . . . .	L Near	 08B0	  BOOT1	
+mget_2 . . . . . . . . . . . . .	L Near	 08BC	  BOOT1	
+mget_3 . . . . . . . . . . . . .	L Near	 08AD	  BOOT1	
+mget_4 . . . . . . . . . . . . .	L Near	 08B1	  BOOT1	
+mget_5 . . . . . . . . . . . . .	L Near	 08BF	  BOOT1	
+mget_6 . . . . . . . . . . . . .	L Near	 08C4	  BOOT1	
+mget_7 . . . . . . . . . . . . .	L Near	 08BD	  BOOT1	
+minute . . . . . . . . . . . . .	L Near	 0EE2	  BOOT1	
+month  . . . . . . . . . . . . .	L Near	 0EDC	  BOOT1	
+msgINumber . . . . . . . . . . .	L Near	 1084	  BOOT1	
+msgVol_Size_Hdr  . . . . . . . .	L Near	 101B	  BOOT1	
+msgVol_free_icount_Hdr . . . . .	L Near	 1062	  BOOT1	
+msgVol_freeblocks_Hdr  . . . . .	L Near	 1034	  BOOT1	
+msgVol_icount_Hdr  . . . . . . .	L Near	 104D	  BOOT1	
+msgVolume_Info . . . . . . . . .	L Near	 0FB5	  BOOT1	
+msgVolume_Serial . . . . . . . .	L Near	 100E	  BOOT1	
+msgVolume_Size . . . . . . . . .	L Near	 102A	  BOOT1	
+msgVolume_free_icount  . . . . .	L Near	 1071	  BOOT1	
+msgVolume_freeblocks . . . . . .	L Near	 1043	  BOOT1	
+msgVolume_icount . . . . . . . .	L Near	 105C	  BOOT1	
+msg_inode_details  . . . . . . .	L Near	 1095	  BOOT1	
+msg_unix_drv_read_error  . . . .	L Near	 0E48	  BOOT1	
+namei_0  . . . . . . . . . . . .	L Near	 0728	  BOOT1	
+namei_1  . . . . . . . . . . . .	L Near	 072D	  BOOT1	
+namei_2  . . . . . . . . . . . .	L Near	 0749	  BOOT1	
+namei_3  . . . . . . . . . . . .	L Near	 0778	  BOOT1	
+namei_4  . . . . . . . . . . . .	L Near	 0794	  BOOT1	
+namei_5  . . . . . . . . . . . .	L Near	 079E	  BOOT1	
+namei_6  . . . . . . . . . . . .	L Near	 073A	  BOOT1	
+namei_7  . . . . . . . . . . . .	L Near	 073D	  BOOT1	
+namei_fsf  . . . . . . . . . . .	L Near	 02B3	  BOOT1	
+namei_iget . . . . . . . . . . .	L Near	 02C7	  BOOT1	
+namei_print_inum . . . . . . . .	L Near	 02CA	  BOOT1	
+namei_sf1  . . . . . . . . . . .	L Near	 029E	  BOOT1	
+namei_sf2  . . . . . . . . . . .	L Near	 02A9	  BOOT1	
+namei_unix_stc . . . . . . . . .	L Near	 02B8	  BOOT1	
+pass_cc_ah . . . . . . . . . . .	L Near	 0C18	  BOOT1	
+pass_cc_al . . . . . . . . . . .	L Near	 0C10	  BOOT1	
+pass_cc_dh . . . . . . . . . . .	L Near	 0C07	  BOOT1	
+pass_cc_dl . . . . . . . . . . .	L Near	 0BFF	  BOOT1	
+pass_escape  . . . . . . . . . .	L Near	 01B4	  BOOT1	
+pdir . . . . . . . . . . . . . .	L Near	 0E44	  BOOT1	
+pdl_0  . . . . . . . . . . . . .	L Near	 0462	  BOOT1	
+pdl_10 . . . . . . . . . . . . .	L Near	 050E	  BOOT1	
+pdl_11 . . . . . . . . . . . . .	L Near	 04E7	  BOOT1	
+pdl_12 . . . . . . . . . . . . .	L Near	 0625	  BOOT1	
+pdl_13 . . . . . . . . . . . . .	L Near	 0512	  BOOT1	
+pdl_1  . . . . . . . . . . . . .	L Near	 0472	  BOOT1	
+pdl_2  . . . . . . . . . . . . .	L Near	 0476	  BOOT1	
+pdl_3  . . . . . . . . . . . . .	L Near	 0484	  BOOT1	
+pdl_4  . . . . . . . . . . . . .	L Near	 04AB	  BOOT1	
+pdl_5  . . . . . . . . . . . . .	L Near	 04B4	  BOOT1	
+pdl_6  . . . . . . . . . . . . .	L Near	 04BC	  BOOT1	
+pdl_7  . . . . . . . . . . . . .	L Near	 04CD	  BOOT1	
+pdl_8  . . . . . . . . . . . . .	L Near	 062D	  BOOT1	
+pdl_9  . . . . . . . . . . . . .	L Near	 0655	  BOOT1	
+pdn0 . . . . . . . . . . . . . .	L Near	 0AC3	  BOOT1	
+pdn_14 . . . . . . . . . . . . .	L Near	 0AEB	  BOOT1	
+pdn_itoa . . . . . . . . . . . .	L Near	 0ADA	  BOOT1	
+pdn_putc . . . . . . . . . . . .	L Near	 0B07	  BOOT1	
+prev_column  . . . . . . . . . .	L Near	 0166	  BOOT1	
+putc . . . . . . . . . . . . . .	L Near	 0656	  BOOT1	
+pvi_icount_loop1 . . . . . . . .	L Near	 0BB9	  BOOT1	
+pvi_icount_loop2 . . . . . . . .	L Near	 0BC2	  BOOT1	
+pvi_icount_loop3 . . . . . . . .	L Near	 0BCB	  BOOT1	
+pvi_size_loop1 . . . . . . . . .	L Near	 0B62	  BOOT1	
+pvi_size_loop2 . . . . . . . . .	L Near	 0B6A	  BOOT1	
+pvi_size_loop3 . . . . . . . . .	L Near	 0B72	  BOOT1	
+read_inode_1 . . . . . . . . . .	L Near	 07B5	  BOOT1	
+read_inode_2 . . . . . . . . . .	L Near	 07CD	  BOOT1	
+read_inode_3 . . . . . . . . . .	L Near	 0819	  BOOT1	
+read_inode_retn  . . . . . . . .	L Near	 081A	  BOOT1	
+read_next_char . . . . . . . . .	L Near	 0142	  BOOT1	
+readinode_sioreg . . . . . . . .	L Near	 07D5	  BOOT1	
+second . . . . . . . . . . . . .	L Near	 0EE4	  BOOT1	
+set_cursor_pos . . . . . . . . .	L Near	 0168	  BOOT1	
+show_inode_1 . . . . . . . . . .	L Near	 0C23	  BOOT1	
+show_inode_2 . . . . . . . . . .	L Near	 0C2E	  BOOT1	
+show_inode_3 . . . . . . . . . .	L Near	 0C32	  BOOT1	
+show_inode_4 . . . . . . . . . .	L Near	 0C36	  BOOT1	
+show_inode_5 . . . . . . . . . .	L Near	 0C40	  BOOT1	
+show_inode_6 . . . . . . . . . .	L Near	 0C52	  BOOT1	
+show_inode_7 . . . . . . . . . .	L Near	 0C76	  BOOT1	
+show_inode_retn  . . . . . . . .	L Near	 0C3F	  BOOT1	
+show_inode_stc_retn  . . . . . .	L Near	 0C3E	  BOOT1	
+show_uf1 . . . . . . . . . . . .	L Near	 0326	  BOOT1	
+show_uf2 . . . . . . . . . . . .	L Near	 0331	  BOOT1	
+show_uf3 . . . . . . . . . . . .	L Near	 033B	  BOOT1	
+str_inode_number . . . . . . . .	L Near	 0EFE	  BOOT1	
+suf_10 . . . . . . . . . . . . .	L Near	 06F7	  BOOT1	
+suf_11 . . . . . . . . . . . . .	L Near	 0701	  BOOT1	
+suf_12 . . . . . . . . . . . . .	L Near	 070B	  BOOT1	
+suf_1  . . . . . . . . . . . . .	L Near	 069B	  BOOT1	
+suf_2  . . . . . . . . . . . . .	L Near	 06A4	  BOOT1	
+suf_3  . . . . . . . . . . . . .	L Near	 06C5	  BOOT1	
+suf_4  . . . . . . . . . . . . .	L Near	 06D1	  BOOT1	
+suf_5  . . . . . . . . . . . . .	L Near	 06D8	  BOOT1	
+suf_6  . . . . . . . . . . . . .	L Near	 06DB	  BOOT1	
+suf_7  . . . . . . . . . . . . .	L Near	 06E7	  BOOT1	
+suf_8  . . . . . . . . . . . . .	L Near	 06EB	  BOOT1	
+suf_9  . . . . . . . . . . . . .	L Near	 06EF	  BOOT1	
+syschdir_0 . . . . . . . . . . .	L Near	 065D	  BOOT1	
+syschdir_1 . . . . . . . . . . .	L Near	 0662	  BOOT1	
+syschdir_2 . . . . . . . . . . .	L Near	 0667	  BOOT1	
+syschdir_3 . . . . . . . . . . .	L Near	 066F	  BOOT1	
+syschdir_4 . . . . . . . . . . .	L Near	 0673	  BOOT1	
+syschdir_5 . . . . . . . . . . .	L Near	 0676	  BOOT1	
+txt_inode_cday . . . . . . . . .	L Near	 1179	  BOOT1	
+txt_inode_chour  . . . . . . . .	L Near	 1184	  BOOT1	
+txt_inode_cminute  . . . . . . .	L Near	 1187	  BOOT1	
+txt_inode_cmonth . . . . . . . .	L Near	 117C	  BOOT1	
+txt_inode_csecond  . . . . . . .	L Near	 118A	  BOOT1	
+txt_inode_ctim_h . . . . . . . .	L Near	 116D	  BOOT1	
+txt_inode_cyear  . . . . . . . .	L Near	 117F	  BOOT1	
+txt_inode_dskp . . . . . . . . .	L Near	 112C	  BOOT1	
+txt_inode_flags_b  . . . . . . .	L Near	 10DB	  BOOT1	
+txt_inode_flags_h  . . . . . . .	L Near	 10D3	  BOOT1	
+txt_inode_mday . . . . . . . . .	L Near	 11AF	  BOOT1	
+txt_inode_mhour  . . . . . . . .	L Near	 11BA	  BOOT1	
+txt_inode_mminute  . . . . . . .	L Near	 11BD	  BOOT1	
+txt_inode_mmonth . . . . . . . .	L Near	 11B2	  BOOT1	
+txt_inode_msecond  . . . . . . .	L Near	 11C0	  BOOT1	
+txt_inode_mtim_h . . . . . . . .	L Near	 11A3	  BOOT1	
+txt_inode_myear  . . . . . . . .	L Near	 11B5	  BOOT1	
+txt_inode_nlks . . . . . . . . .	L Near	 10FC	  BOOT1	
+txt_inode_number . . . . . . . .	L Near	 10C2	  BOOT1	
+txt_inode_reserved . . . . . . .	L Near	 11CE	  BOOT1	
+txt_inode_size . . . . . . . . .	L Near	 1117	  BOOT1	
+txt_inode_uid  . . . . . . . . .	L Near	 110B	  BOOT1	
+u_base . . . . . . . . . . . . .	L Near	 0EC4	  BOOT1	
+u_cdir . . . . . . . . . . . . .	L Near	 0EBE	  BOOT1	
+u_count  . . . . . . . . . . . .	L Near	 0EC8	  BOOT1	
+u_dirbuf . . . . . . . . . . . .	L Near	 0ECC	  BOOT1	
+u_dirp . . . . . . . . . . . . .	L Near	 0EC2	  BOOT1	
+u_namep  . . . . . . . . . . . .	L Near	 0EC0	  BOOT1	
+u_nread  . . . . . . . . . . . .	L Near	 0ECA	  BOOT1	
+u_off  . . . . . . . . . . . . .	L Near	 0EC6	  BOOT1	
+u_uid  . . . . . . . . . . . . .	L Near	 0EBD	  BOOT1	
+ucds_0 . . . . . . . . . . . . .	L Near	 03E2	  BOOT1	
+ucds_1 . . . . . . . . . . . . .	L Near	 0418	  BOOT1	
+ucds_2 . . . . . . . . . . . . .	L Near	 0427	  BOOT1	
+ucds_3 . . . . . . . . . . . . .	L Near	 043E	  BOOT1	
+ucds_4 . . . . . . . . . . . . .	L Near	 043B	  BOOT1	
+ucds_5 . . . . . . . . . . . . .	L Near	 0448	  BOOT1	
+ucds_6 . . . . . . . . . . . . .	L Near	 0406	  BOOT1	
+ucds_7 . . . . . . . . . . . . .	L Near	 0459	  BOOT1	
+ucds_8 . . . . . . . . . . . . .	L Near	 0405	  BOOT1	
+ucds_9 . . . . . . . . . . . . .	L Near	 0453	  BOOT1	
+uf_i_number  . . . . . . . . . .	L Near	 0E9A	  BOOT1	
+unix_cdir  . . . . . . . . . . .	L Near	 0E1A	  BOOT1	
+unix_cdrv  . . . . . . . . . . .	L Near	 0E14	  BOOT1	
+unix_prompt_10 . . . . . . . . .	L Near	 0129	  BOOT1	
+unix_prompt_11 . . . . . . . . .	L Near	 00DE	  BOOT1	
+unix_prompt_12 . . . . . . . . .	L Near	 011D	  BOOT1	
+unix_prompt_13 . . . . . . . . .	L Near	 0141	  BOOT1	
+unix_prompt_14 . . . . . . . . .	L Near	 008C	  BOOT1	
+unix_prompt_15 . . . . . . . . .	L Near	 0092	  BOOT1	
+unix_prompt_16 . . . . . . . . .	L Near	 00BF	  BOOT1	
+unix_prompt_17 . . . . . . . . .	L Near	 0131	  BOOT1	
+unix_prompt_1  . . . . . . . . .	L Near	 007E	  BOOT1	
+unix_prompt_2  . . . . . . . . .	L Near	 0084	  BOOT1	
+unix_prompt_3  . . . . . . . . .	L Near	 00C3	  BOOT1	
+unix_prompt_4  . . . . . . . . .	L Near	 00CF	  BOOT1	
+unix_prompt_5  . . . . . . . . .	L Near	 00ED	  BOOT1	
+unix_prompt_6  . . . . . . . . .	L Near	 00F5	  BOOT1	
+unix_prompt_7  . . . . . . . . .	L Near	 00FD	  BOOT1	
+unix_prompt_8  . . . . . . . . .	L Near	 00FF	  BOOT1	
+unix_prompt_9  . . . . . . . . .	L Near	 0112	  BOOT1	
+unix_reboot  . . . . . . . . . .	L Near	 14E6	  BOOT1	
+waiting_count  . . . . . . . . .	L Near	 14F2	  BOOT1	
+year . . . . . . . . . . . . . .	L Near	 0EDA	  BOOT1	
+
+	   0 Warnings
+	   0 Errors
