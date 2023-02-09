@@ -1,0 +1,2677 @@
+Microsoft (R) Macro Assembler Version 6.14.8444		    04/04/22 20:00:09
+unixfdfs.asm						     Page 1 - 1
+
+
+				; ****************************************************************************
+				; UNIXFDFS.ASM
+				; ----------------------------------------------------------------------------
+				;
+				; RETRO UNIX 8086 (Retro Unix == Turkish Rational Unix)
+				; Operating System Project (v0.1) by ERDOGAN TAN (Beginning: 11/07/2012) 
+				; 1.44 MB Floppy Disk 
+				; Bootable Unix (RUFS) File System Installation/Formatting Code 
+				;
+				; UNIXFDFS.ASM -> Last Modification: 04/04/2022
+				;
+				; Derivation from UNIX Operating System (v1.0 for PDP-11) 
+				; (Original) Source Code by Ken Thompson (1971-1972)
+				; <Bell Laboratories (17/3/1972)>
+				; <Preliminary Release of UNIX Implementation Document>
+				;
+				;
+				; ****************************************************************************
+				; 04/04/2022 - Inode Table/List Start Address Modification. (3 -> 2)
+				; 03/04/2022 - Inode Table/List Modifications (BugFix)
+				; 24/01/2022
+				; 09/01/2020 - Boot Sector (bsDriveNumber, DL) BugFix
+
+				; 14/03/2022 (*)
+				; 24/01/2022 (*)
+				; 04/12/2015 Retro UNIX 386 v1.1 (14 byte file names)
+				; 21/04/2014 (tty8=COM1, tty9=COM2)
+				; 22/12/2013
+				; 09/07/2013
+
+				; 14/03/2022 (*)
+				; NOTE: Previous COM/binary file (which was assembled in 24/01/2022) contains
+				;	runix 386 v1.0 'uinstall.asm' code (for 8 byte file names) mistakenly.
+				;	So, this modification is only for assembling 'unixfdfs.com' with v1.1
+				;	'uinstall.asm' file (builds sys directories with 14 byte file names). 	 	 
+
+				; 24/01/2022
+				; (UNIXFDFS.COM)
+				; Assembler: MASM 6.14
+				;	masm unixfdfs.asm, unixfdfs.obj, unixfdfs.lst
+				;	link /t unixfdfs.obj
+
+				; (Retro Unix File System) Boot Sector Parameters
+				;
+				;jmp short @f 	       ; db EBh, 13h
+ = 0002				bsFSystemID	equ 2  ; db 'RUFS'
+ = 0006				bsVolumeSerial	equ 6  ; dd 0
+						       ; db 'fd'
+ = 000C				bsDriveNumber	equ 12 ; db 0
+ = 000D				bsReserved	equ 13 ; db 0  ; 512 bytes per sector
+ = 000E				bsSecPerTrack	equ 14 ; db 18
+ = 000F				bsHeads		equ 15 ; db 2
+ = 0010				bsTracks	equ 16 ; dw 80
+ = 0012				bs_BF_I_number	equ 18 ; dw 0
+						       ; db '@'
+				; @@:	 
+
+ 0000				RUFS_INSTL      SEGMENT PUBLIC 'CODE'
+						assume cs:RUFS_INSTL,ds:RUFS_INSTL,es:RUFS_INSTL,ss:RUFS_INSTL
+
+ 0000				rufs_fd_format proc near
+						; 04/12/2015
+						; 28/10/2012
+						; 19/9/2012
+						; 14/8/2012
+						; 13/8/2012
+						; 12/8/2012
+
+						org 100h
+ 0100				INSTALL:
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; see if drive specified
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 0100  BE 0080					mov si, offset 80h		; PSP command tail
+ 0103  8A 0C					mov cl, byte ptr [SI]
+ 0105  0A C9					or cl, cl                               
+ 0107  74 7B					jz short rufs_fd_format_7	; jump if zero
+
+ 0109				rufs_fd_format_1:
+ 0109  46					inc si
+ 010A  8A 04					mov al, byte ptr [SI]
+ 010C  3C 20					cmp al, ' '			; is it SPACE ?
+ 010E  75 06					jne short rufs_fd_format_2
+
+ 0110  FE C9					dec cl                                  
+ 0112  75 F5					jne short rufs_fd_format_1                 
+ 0114  EB 6E					jmp short rufs_fd_format_7
+
+ 0116				rufs_fd_format_2:
+ 0116  3C 66					cmp al, "f"
+ 0118  75 1E					jne short rufs_fd_format_3
+ 011A  46					inc si
+ 011B  8A 04					mov al, byte ptr [SI]
+ 011D  3C 64					cmp al, "d"
+ 011F  75 63					jne short rufs_fd_format_7
+ 0121  46					inc si
+ 0122  8B 04					mov ax, word ptr [SI]
+ 0124  3C 30					cmp al, '0'                            
+ 0126  72 5C					jb short rufs_fd_format_7
+ 0128  3C 31					cmp al, '1'
+ 012A  77 58					ja short rufs_fd_format_7
+ 012C  80 FC 20					cmp ah, 20h
+ 012F  77 53					ja short rufs_fd_format_7
+ 0131  A2 100A R				mov byte ptr [RUFS_DRIVE], al
+ 0134  2C 30					sub al, '0'
+ 0136  EB 17					jmp short rufs_fd_format_5
+
+ 0138				rufs_fd_format_3:
+ 0138  3C 41					cmp al, 'A'
+ 013A  72 48					jb short rufs_fd_format_7
+ 013C  3C 42					cmp al, 'B'			; A - Z
+ 013E  76 0A					jna short rufs_fd_format_4                    
+ 0140  3C 61					cmp al, 'a'			; a - z 
+ 0142  72 40					jb short rufs_fd_format_7                 
+ 0144  3C 62					cmp al, 'b'                           
+ 0146  77 3C					ja short rufs_fd_format_7                 
+
+ 0148  2C 20					sub al, 'a'-'A'			; to upper case
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; Write message
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 014A				rufs_fd_format_4:
+ 014A  A2 100A R				mov byte ptr [RUFS_DRIVE], al
+ 014D  2C 41					sub al, 'A'			; make it zero based 
+
+ 014F				rufs_fd_format_5:
+ 014F  8A D0					mov dl, al
+ 0151  88 16 1118 R				mov byte ptr [boot_sector+bsDriveNumber], dl
+ 0155  B4 08					mov ah, 08h
+ 0157  CD 13					int 13h				; return disk parameters
+ 0159  0E					push cs
+ 015A  07					pop es				; restore es
+ 015B  73 03 E9 00A5				jc  rufs_fd_format_17
+
+ 0160  80 FB 04					cmp bl, 04h			; Drive Type
+ 0163  73 03 E9 009D				jb  rufs_fd_format_17
+
+ 0168  BE 0FB8 R				mov si, offset Msg_DoYouWantToFormat
+ 016B  E8 00A0					call PRINT_MSG
+
+ 016E				rufs_fd_format_6:
+ 016E  33 C0					xor ax, ax
+ 0170  CD 16					int 16h				; wait for keyboard command
+ 0172  3C 03					cmp al, 'C'-40h
+ 0174  74 14					je short rufs_fd_format_8              
+ 0176  3C 1B					cmp al, 27
+ 0178  74 10					je short rufs_fd_format_8
+ 017A  24 DF					and al, 0DFh
+ 017C  3C 59					cmp al, 'Y'			; Yes?
+ 017E  74 1C					je short rufs_fd_format_10	; write
+ 0180  3C 4E					cmp al, 'N'			; No?
+ 0182  74 10					je short rufs_fd_format_9	; no write (exit)
+
+ 0184				rufs_fd_format_7:
+ 0184  BE 0EBD R				mov si, offset UNIX_Welcome
+ 0187  E8 0084					call PRINT_MSG
+
+ 018A				rufs_fd_format_8:
+ 018A  BE 10A7 R				mov si, offset UNIX_CRLF
+ 018D  E8 007E					call PRINT_MSG
+
+ 0190  CD 20					int 20h
+
+ 0192  EB FE			infinive_loop:  jmp short infinive_loop
+
+
+ 0194				rufs_fd_format_9:
+ 0194  BE 1083 R				mov si, offset msg_NO
+ 0197  E8 0074					call PRINT_MSG
+
+ 019A  EB EE					jmp short rufs_fd_format_8
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				; get drive parameters
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 019C				rufs_fd_format_10:
+ 019C  BE 107E R				mov si, offset msg_YES
+ 019F  E8 006C					call PRINT_MSG
+
+ 01A2				rufs_fd_format_11:
+ 01A2  33 C0					xor ax, ax
+ 01A4  CD 1A					int 1Ah                 ; get time of day
+				  					; set unique volume ID
+ 01A6  89 16 1112 R				mov word ptr [boot_sector+bsVolumeSerial], dx
+ 01AA  89 0E 1114 R				mov word ptr [boot_sector+bsVolumeSerial+2], cx 
+
+ 01AE				rufs_fd_format_12:
+ 01AE  BE 1018 R				mov si, offset Msg_installing_file_system
+ 01B1  E8 005A					call PRINT_MSG
+
+ 01B4  8A 16 1118 R				mov dl, byte ptr [boot_sector+bsDriveNumber]
+
+ 01B8  E8 0078					call unix_fs_install
+ 01BB  73 1C					jnc short rufs_fd_format_14
+
+ 01BD  8A 26 0EB1 R				mov ah, byte ptr [Error]
+
+ 01C1				rufs_fd_format_13: ; loc_rw_error
+ 01C1  8A C4					mov al, ah
+ 01C3  50					push ax
+ 01C4  BE 1087 R				mov si, offset Msg_Disk_RW_Error
+ 01C7  E8 0044					call PRINT_MSG
+ 01CA  58					pop ax
+ 01CB  E8 004F					call proc_hex
+ 01CE  A3 10A4 R				mov word ptr [Str_Err], ax
+ 01D1  BE 1099 R				mov si, Offset Msg_Error_Number
+ 01D4  E8 0037					call PRINT_MSG
+
+ 01D7  CD 20					int 20h
+
+ 01D9				rufs_fd_format_14:
+ 01D9  BE 1079 R				mov  si, offset Msg_OK
+ 01DC  E8 002F					call PRINT_MSG
+
+ 01DF				rufs_fd_format_15:
+ 01DF  BE 1043 R				mov si, offset Msg_writing_boot_sector
+ 01E2  E8 0029					call PRINT_MSG
+
+ 01E5  C6 06 10AB R 04				mov byte ptr [RetryCount], 4
+
+ 01EA				rufs_fd_format_16:
+ 01EA  B8 0301					mov ax, 0301h			; write to disk
+
+ 01ED  BB 110C R				mov bx, offset boot_sector	; location of boot code
+
+ 01F0  B9 0001					mov cx, 1			; cylinder = 0
+										; sector = 1
+ 01F3  B6 00					mov dh, 0			; head = 0
+ 01F5  8A 16 1118 R				mov dl, byte ptr [boot_sector+bsDriveNumber]
+
+ 01F9  CD 13					int 13h
+ 01FB  73 08					jnc short rufs_fd_format_17
+ 01FD  FE 0E 10AB R				dec byte ptr [RetryCount]
+ 0201  75 E7					jnz short rufs_fd_format_16
+
+ 0203  EB BC					jmp short rufs_fd_format_13
+
+ 0205				rufs_fd_format_17:
+ 0205  BE 1079 R				mov  si, offset Msg_OK
+ 0208  E8 0003					call PRINT_MSG
+
+						;int 20h
+ 020B  E9 FF7C					jmp rufs_fd_format_8
+
+ 020E				rufs_fd_format  endp
+
+
+ 020E				PRINT_MSG     proc near
+ 020E  BB 0007					mov     BX,07h  
+ 0211  B4 0E					mov     AH,0Eh  
+
+ 0213				PRINT_MSG_LOOP:
+ 0213  AC					lodsb			; Load byte at DS:SI to AL
+ 0214  22 C0					and     AL,AL            
+ 0216  74 04					jz      short PRINT_MSG_OK       
+					
+ 0218  CD 10					int     10h		; BIOS Service func ( ah ) = 0Eh
+									; Write char as TTY
+									;AL-char BH-page BL-color
+ 021A  EB F7					jmp     short PRINT_MSG_LOOP           
+
+ 021C				PRINT_MSG_OK:
+ 021C  C3					retn
+
+ 021D				PRINT_MSG     endp
+
+
+ 021D				proc_hex        proc    near
+
+ 021D  D4 10					db 0D4h,10h		; Undocumented inst. AAM
+									; AH = AL / 10h
+									; AL = AL MOD 10h
+ 021F  0D 3030					or AX,'00'		; Make it ZERO (ASCII) based
+
+ 0222  86 E0					xchg AH,AL 
+
+				; 1999
+ 0224  3C 39					cmp AL,'9'
+ 0226  76 02					jna pass_cc_al
+ 0228  04 07					add AL,7
+ 022A				pass_cc_al:
+ 022A  80 FC 39					cmp AH,'9'
+ 022D  76 03					jna pass_cc_ah
+ 022F  80 C4 07					add AH,7
+ 0232				pass_cc_ah:
+
+				; 1998
+ 0232  C3					retn
+
+ 0233				proc_hex        endp
+
+
+				;;;;;
+				include         uinstall.asm
+			      C ; UINSTALL.ASM
+			      C ; --------------------------------------------------------------
+			      C ; RETRO UNIX v0.2 - 14 byte file name modifications (04/12/2015)
+			      C ; RETRO UNIX v0.1 'fd0' formatting procedures
+			      C ; Last Update: 04/04/2022 
+			      C ; (new /dev directory format 
+			      C ; according to Retro UNIX 8086 v1 kernel)
+			      C ; 04/12/2015 (14 byte file names)
+			      C ; 21/04/2014 (tty8, tty9)
+			      C ; 09/07/2013
+			      C ; 05/03/2013 (ALIGN) 
+			      C ; 31/10/2012, 16/12/2012 (unixproc.asm -> sioreg) 
+			      C ; ERDOGAN TAN [ 14-15-16-21-27/7/2012, 4-5-12-13-14-15-21/8/2012 ]
+			      C ; These procedures will be located in UNIXFDFS.ASM file 
+			      C ; when they are completed.
+			      C ; (NOTE: only for (R)UFS initialization of FD0 1.44MB floppy disk
+			      C 
+ = 0168			      C SIZE_FREE_MAP equ 360
+ = 0020			      C SIZE_INODE_MAP equ 32
+			      C 
+ = 0B40			      C DISK_SIZE equ 2880 ; in blocks
+			      C 
+			      C ;INODE_COUNT equ SIZE_INODE_MAP * 8
+			      C ; 03/04/2022
+ = 0128			      C INODE_COUNT equ (SIZE_INODE_MAP * 8) + 40
+			      C ;INODE_LIST_BLOCKS equ (INODE_COUNT) / 16
+			      C ; 03/04/2022
+ = 0013			      C INODE_LIST_BLOCKS equ ((INODE_COUNT+15) / 16) ; 19 blocks
+			      C 
+ = 0029			      C ROOT_DIR_INODE equ 41
+			      C 
+ = 0074			      C SIZE_Reserved1 equ 512 - (2+SIZE_FREE_MAP+2+SIZE_INODE_MAP) 
+			      C 
+ 0400			      C SuperBlock struc
+			      C 
+ 0000  0000		      C sb_FreeMapSize 	dw ?
+ 0002  0168 [		      C sb_FreeMap	db SIZE_FREE_MAP dup(?)
+        00
+       ]
+ 016A  0000		      C sb_InodeMapSize dw ?
+ 016C  0020 [		      C sb_InodeMap	db SIZE_INODE_MAP dup(?)
+        00
+       ]
+ 018C  0074 [		      C sb_Reserved1	db SIZE_Reserved1 dup(?)
+        00
+       ]
+ 0200  0200 [		      C sb_Reserved2	db 512 dup(?)
+        00
+       ]
+			      C 
+			      C SuperBlock ends
+			      C 
+			      C ; UNIX v1 I-node Flags: 
+			      C ; 1000000000000000b 	i-node is allocated (8000h)
+			      C ; 0100000000000000b	directory (4000h)
+			      C ; 0010000000000000b	file has been modified (2000h)		 	
+			      C ; 0001000000000000b	large file (1000h)
+			      C ; 0000000000100000b	set user id on execution (20h)
+			      C ; 0000000000010000b	executable (10h)
+			      C ; 0000000000001000b	read, owner (8)
+			      C ; 0000000000000100b	write, owner (4)
+			      C ; 0000000000000010b	read, non-owner (2)
+			      C ; 0000000000000001b	write, non-owner (1)
+			      C 
+ 0233			      C unix_fs_install proc near
+			      C 	; 8086 code by Erdogan Tan
+			      C 	; 04/04/2022
+			      C 	; 03/04/2022
+			      C 	; 31/10/2012
+			      C 	; 21/08/2012
+			      C 	; 15/08/2012
+			      C 	; 14/08/2012
+			      C 	; 13/08/2012
+			      C 	; 05/08/2012
+			      C 	; 04/08/2012
+			      C 	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/6/1972
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	; NOTE: 
+			      C 	; The "cold" unix (u0, PDP-11) code is modified for fd0 
+			      C 	;  -> 1.44 MB floppy disk (Retro UNIX v1, 8086) fs
+			      C 
+ 0233  88 16 02F4 R	      C 	mov byte ptr [buff_d], dl ; 14/8/2012, drive number
+			      C 
+ 0237  C7 06 0300 R 0168      C 	mov word ptr [systm.sb_FreemapSize], SIZE_FREE_MAP ; 360
+ 023D  C7 06 046A R 0020      C 	mov word ptr [systm.sb_InodeMapSize], SIZE_INODE_MAP ; 32
+ 0243  B8 0B40		      C 	mov ax, DISK_SIZE ; 2880 blocks/sectors
+ 0246			      C uinstall_1:
+			      C ;set bit AX/R1 in free storage map in core/memory
+ 0246  48		      C 	dec ax ; R1
+ 0247  E8 0ABA		      C 	call free
+			      C 
+			      C 	;;cmp ax, INODE_LIST_BLOCKS + 4 ; 15/8/2012
+			      C         ; 03/04/2022
+			      C 	;cmp ax, INODE_LIST_BLOCKS + 3
+			      C 	; 04/04/2022
+ 024A  83 F8 15		      C 	cmp ax, INODE_LIST_BLOCKS + 2
+ 024D  77 F7		      C 	ja short uinstall_1
+ 024F			      C uinstall_2:
+			      C ; zero i-list	
+ 024F  48		      C 	dec ax
+			      C 	; AX (R1) = Block number
+			      C 
+ 0250  E8 0ADF		      C 	call clear 	
+ 0253  72 71		      C         jc short uinstall_10 ; rw_error
+			      C 
+ 0255  23 C0		      C 	and ax, ax
+ 0257  75 F6		      C 	jnz short uinstall_2
+			      C 
+ 0259			      C uinstall_3:
+			      C 	; initialize inodes for special files (1 to 40)
+ 0259  BB 0028		      C 	mov bx, 40 ; BX = R1,  41 = root directory i-number
+ 025C			      C uinstall_4:
+ 025C  E8 07F1		      C 	call iget
+ 025F  72 65		      C         jc short uinstall_10 ; rw_error
+			      C 
+ 0261  C7 06 076A R 800F      C 	mov word ptr [i_flgs], 800Fh ;  1000000000001111b
+ 0267  C6 06 076C R 01	      C         mov byte ptr [i_nlks], 1
+ 026C  C6 06 076D R 00	      C         mov byte ptr [i_uid], 0
+ 0271  E8 08DA		      C 	call setimod
+ 0274  4B		      C 	dec bx
+ 0275  75 E5		      C 	jnz short uinstall_4
+			      C 
+ 0277			      C uinstall_5:
+			      C 	;push di
+			      C 	;push si
+ 0277  BE 078A R	      C 	mov si, offset idata ; base address of assembled dirs
+ 027A  BF 0500 R	      C 	mov di, offset dirs  ; directory data for assembled dirs
+ 027D  BB 0029		      C 	mov bx, 41
+ 0280			      C uinstall_6:
+ 0280  E8 08F4		      C 	call imap
+ 0283  87 DA		      C 	xchg bx,dx ; 13/8/2012
+			      C 	; 21/8/2012 (AX -> AL, word ptr [BX] -> byte ptr [BX])
+ 0285  08 07		      C 	or byte ptr [BX], al ; BX/DX = R2, ax = mq
+			      C 			     ; set the bit to indicate the i-node
+			      C 			     ; is not available/free
+ 0287  87 DA		      C 	xchg bx, dx ; 13/8/2012
+ 0289  E8 07C4		      C 	call iget
+			      C 	;jnc short uinstall_7
+ 028C  72 38		      C         jc short uinstall_10  ; rw_error
+ 028E			      C @@:
+			      C 	;pop si
+			      C 	;pop di
+			      C         ;jmp short uinstall_10 ; rw_error
+			      C 
+ 028E			      C uinstall_7:
+			      C 	; SI, DI registers are not modified 
+			      C 	; in imap, iget, setimod and writei procedures
+ 028E  AD		      C 	lodsw
+ 028F  A3 076A R	      C         mov word ptr [i_flgs], ax
+ 0292  AC		      C 	lodsb
+ 0293  A2 076C R	      C         mov byte ptr [i_nlks], al
+ 0296  AC		      C 	lodsb
+ 0297  A2 076D R	      C         mov byte ptr [i_uid], al
+ 029A  E8 08B1		      C 	call setimod
+ 029D  AD		      C 	lodsw
+ 029E  A3 0762 R	      C         mov word ptr [u_count], ax
+			      C 	
+ 02A1  83 C6 1A		      C 	add si, 26 ; now, si points 1st word of next inode
+			      C 
+ 02A4  89 3E 0764 R	      C         mov word ptr [u_base], di
+ 02A8  03 F8		      C 	add di, ax
+			      C 
+ 02AA  C7 06 0766 R 0760 R    C 	mov word ptr [u_fofp], offset u_off ; 31/10/2012
+			      C 
+ 02B0  C7 06 0760 R 0000      C         mov word ptr [u_off], 0
+			      C 	
+ 02B6  E8 08DE		      C 	call writei
+			      C 	;jc short @b
+ 02B9  72 0B		      C         jc short uinstall_10 ; rw_error
+			      C 
+ 02BB  83 FB 2E		      C 	cmp bx, 46
+ 02BE  73 03		      C 	jnb short uinstall_8
+			      C 
+ 02C0  43		      C 	inc bx
+ 02C1  EB BD		      C 	jmp short uinstall_6
+			      C 
+			      C 
+ 02C3			      C uinstall_8:	
+			      C 	;pop si
+			      C 	;pop di
+			      C 
+ 02C3			      C uinstall_9:
+ 02C3  E8 0001		      C 	call sync ; write modified super block and buffer to disk
+			      C 	;jc short rw_error
+			      C 
+ 02C6			      C uinstall_10:
+ 02C6  C3		      C 	retn
+			      C 
+ 02C7			      C unix_fs_install endp
+			      C 
+			      C 
+ 02C7			      C sync 	proc near
+			      C 	; 12/8/2012
+			      C 	; updates super block and the last i-node on disk 
+			      C 	; if modified
+			      C 	; e.g. smod = 1, imod = 1, buffer_m = 1
+			      C 	;
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 
+ 02C7  33 DB		      C 	xor bx, bx ; mov bx, 0
+ 02C9  E8 0784		      C         call iget
+ 02CC  72 21		      C 	jc short sync_2
+			      C 
+ 02CE  33 C0		      C 	xor ax, ax
+ 02D0  38 06 0EB3 R	      C 	cmp byte ptr [smod], al ; 0
+ 02D4  76 1C		      C 	jna short sync_3
+			      C 
+ 02D6			      C sync_1:
+ 02D6  A2 0EB3 R	      C 	mov byte ptr [smod], al ; 0
+			      C 
+ 02D9  B9 0100		      C 	mov cx, 256
+ 02DC  BE 0300 R	      C 	mov si, offset Systm
+ 02DF  BF 0850 R	      C 	mov di, offset Buffer
+ 02E2  F3/ A5		      C 	rep movsw
+			      C 
+ 02E4  FE C0		      C 	inc al
+			      C 
+ 02E6  A3 02F5 R	      C         mov word ptr [buff_s], ax ; 1 ; superblock sector number
+ 02E9  A2 02F8 R	      C 	mov byte ptr [buff_w], al
+			      C 
+ 02EC  E8 0803		      C 	call poke
+			      C 
+ 02EF			      C sync_2:
+ 02EF  A1 0EB1 R	      C 	mov ax, word ptr [Error]
+			      C 
+ 02F2			      C sync_3:
+ 02F2  C3		      C 	retn	
+			      C 
+ 02F3			      C sync	endp
+			      C 
+			      C align 2
+			      C 
+ 02F4 00		      C buff_d: db 0
+ 02F5 FFFF		      C buff_s: dw 0FFFFh ; Buffer sector
+ 02F7 00		      C buff_m:	db 0 ; buffer daha changed/modified (dirty) flag
+ 02F8 00		      C buff_w: db 0 ; read/write flag (write=1, read=0)
+			      C 
+			      C align 16
+			      C 
+ 0300			      C systm: ; superblock
+ 0300  0200 [		      C db 512 dup(0)
+        00
+       ]
+			      C 
+			      C ; 04/12/2015 (14 byte file name modifications)
+			      C ; 5/8/2012
+			      C ; 14/7/2012
+ 0500			      C dirs:
+ 0500			      C root_dir: ; root directory
+ 0500  0029		      C 		dw 41
+ 0502  2E 2E		      C 		db ".."
+ 0504  000C [		      C 		db 12 dup(0)
+        00
+       ]
+ 0510  0029		      C 		dw 41
+ 0512  2E		      C 		db "."
+ 0513  000D [		      C 		db 13 dup(0)
+        00
+       ]
+ 0520  002A		      C 		dw 42
+ 0522  64 65 76		      C 		db "dev"
+ 0525  000B [		      C 		db 11 dup(0)
+        00
+       ]
+ 0530  002B		      C 		dw 43
+ 0532  62 69 6E		      C 		db "bin"
+ 0535  000B [		      C 		db 11 dup(0)
+        00
+       ]
+ 0540  002C		      C 		dw 44
+ 0542  65 74 63		      C 		db "etc"
+ 0545  000B [		      C 		db 11 dup(0)
+        00
+       ]
+ 0550  002D		      C 		dw 45
+ 0552  75 73 72		      C 		db "usr"
+ 0555  000B [		      C 		db 11 dup(0)
+        00
+       ]
+ 0560  002E		      C 		dw 46
+ 0562  74 6D 70		      C 		db "tmp"
+ 0565  000B [		      C 		db 11 dup(0)
+        00
+       ]
+			      C 
+ 0570 = 0070		      C size_root_dir equ $ - offset root_dir
+			      C 
+ 0570			      C dev_dir: ; device directory
+ 0570  0029		      C 		dw 41
+ 0572  2E 2E		      C 		db ".."
+ 0574  000C [		      C 		db 12 dup(0)		
+        00
+       ]
+ 0580  002A		      C 		dw 42
+ 0582  2E		      C 		db "."
+ 0583  000D [		      C 		db 13 dup(0)		
+        00
+       ]
+ 0590  0001		      C 		dw 1
+ 0592  74 74 79		      C 		db "tty"
+ 0595  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 05A0  0002		      C 		dw 2
+ 05A2  6D 65 6D		      C 		db "mem"
+ 05A5  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 05B0  0003		      C 		dw 3
+ 05B2  66 64 30		      C 		db "fd0"
+ 05B5  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 05C0  0004		      C 		dw 4
+ 05C2  66 64 31		      C 		db "fd1"
+ 05C5  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 05D0  0005		      C 		dw 5
+ 05D2  68 64 30		      C 		db "hd0"
+ 05D5  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 05E0  0006		      C 		dw 6
+ 05E2  68 64 31		      C 		db "hd1"
+ 05E5  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 05F0  0007		      C 		dw 7
+ 05F2  68 64 32		      C 		db "hd2"
+ 05F5  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 0600  0008		      C 		dw 8
+ 0602  68 64 33		      C 		db "hd3"
+ 0605  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 0610  0009		      C 		dw 9
+ 0612  6C 70 72		      C 		db "lpr"
+ 0615  000B [		      C 		db 11 dup(0)		
+        00
+       ]
+ 0620  000A		      C 		dw 10
+ 0622  74 74 79 30	      C                 db "tty0"
+ 0626  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 0630  000B		      C 		dw 11
+ 0632  74 74 79 31	      C                 db "tty1"
+ 0636  000A [		      C 		db 10 dup(0)	
+        00
+       ]
+ 0640  000C		      C 		dw 12
+ 0642  74 74 79 32	      C                 db "tty2"
+ 0646  000A [		      C 		db 10 dup(0)	
+        00
+       ]
+ 0650  000D		      C 		dw 13
+ 0652  74 74 79 33	      C                 db "tty3"
+ 0656  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 0660  000E		      C 		dw 14
+ 0662  74 74 79 34	      C                 db "tty4"
+ 0666  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 0670  000F		      C 		dw 15
+ 0672  74 74 79 35	      C                 db "tty5"
+ 0676  000A [		      C  		db 10 dup(0)		
+        00
+       ]
+ 0680  0010		      C 		dw 16
+ 0682  74 74 79 36	      C                 db "tty6"
+ 0686  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 0690  0011		      C 		dw 17
+ 0692  74 74 79 37	      C                 db "tty7"
+ 0696  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 06A0  0012		      C 		dw 18
+ 06A2  43 4F 4D 31	      C                 db "COM1" ; 09/07/2013
+ 06A6  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 06B0  0013		      C 		dw 19
+ 06B2  43 4F 4D 32	      C                 db "COM2" ; 09/07/2013
+ 06B6  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 06C0  0012		      C 		dw 18
+ 06C2  74 74 79 38	      C 		db "tty8" ; 21/04/2014
+ 06C6  000A [		      C 		db 10 dup(0)		
+        00
+       ]
+ 06D0  0013		      C 		dw 19
+ 06D2  74 74 79 39	      C                 db "tty9" ; 21/04/2014  
+ 06D6  000A [		      C 		db 10 dup(0)
+        00
+       ]
+			      C 
+ 06E0 = 0170		      C size_dev_dir equ $ - offset dev_dir
+			      C 
+ 06E0			      C bin_dir:  ; binary directory
+ 06E0  0029		      C 		dw 41
+ 06E2  2E 2E		      C 		db ".."
+ 06E4  000C [		      C 		db 12 dup(0)
+        00
+       ]
+ 06F0  002B		      C 		dw 43
+ 06F2  2E		      C 		db "."
+ 06F3  000D [		      C 		db 13 dup(0)
+        00
+       ]
+			      C 		
+ 0700 = 0020		      C size_bin_dir equ $ - offset bin_dir
+			      C 
+ 0700			      C etc_dir:  ; etcetra directory
+ 0700  0029		      C 		dw 41
+ 0702  2E 2E		      C 		db ".."
+ 0704  000C [		      C 		db 12 dup(0)	
+        00
+       ]
+ 0710  002C		      C 		dw 44
+ 0712  2E		      C 		db "."
+ 0713  000D [		      C 		db 13 dup(0)
+        00
+       ]
+			      C 			
+ 0720 = 0020		      C size_etc_dir equ $ - offset etc_dir
+			      C 
+ 0720			      C usr_dir:  ; user directory
+ 0720  0029		      C 		dw 41
+ 0722  2E 2E		      C 		db ".."
+ 0724  000C [		      C 		db 12 dup(0)	
+        00
+       ]
+ 0730  002D		      C 		dw 45
+ 0732  2E		      C 		db "."
+ 0733  000D [		      C 		db 13 dup(0)
+        00
+       ]
+			      C 		
+ 0740 = 0020		      C size_usr_dir equ $ - offset usr_dir
+			      C 
+ 0740			      C tmp_dir:  ; temporary directory
+ 0740  0029		      C 		dw 41
+ 0742  2E 2E		      C 		db ".."
+ 0744  000C [		      C 		db 12 dup(0)	
+        00
+       ]
+ 0750  002E		      C 		dw 46
+ 0752  2E		      C 		db "."
+ 0753  000D [		      C 		db 13 dup(0)
+        00
+       ]
+			      C 		
+ 0760 = 0020		      C size_tmp_dir equ $ - offset tmp_dir
+			      C 
+			      C align 2
+			      C 
+			      C ;dw 0
+			      C 
+			      C ; 31/10/2012
+ 0760 0000		      C u_off: dw 0
+			      C 
+			      C ; 12/08/2012
+ 0762 0000		      C u_count: dw 0
+ 0764 0000		      C u_base: dw 0
+ 0766 0000		      C u_fofp: dw 0
+ 0768 0000		      C u_nread: dw 0
+			      C 
+			      C ; 17/08/2012
+			      C ; 05/08/2012
+			      C ; 14/07/2012
+ 076A			      C inode:
+ 076A 800F		      C i_flgs: dw 800Fh ; special (device) files flags
+ 076C 01		      C i_nlks: db 1 ; Number of links
+ 076D 00		      C i_uid: db 0  ; user id 
+ 076E 0000		      C i_size: dw 0 ; file size
+ 0770  0008 [		      C i_dskp: dw 8 dup(0)  ; direct or indirect blocks
+        0000
+       ]
+ 0780 00000000		      C i_ctim: dd 0 ; creation time
+ 0784 00000000		      C i_mtim: dd 0 ; last modification time 
+ 0788 0000		      C i_reserved: dw 0 ; reserved (not in use)
+			      C 
+			      C ; 05/08/2012
+			      C ; 14/07/2012
+ 078A			      C idata:
+ 078A			      C inodes:
+			      C 
+ 078A			      C root_inode: ; 41
+ 078A  C00E		      C 		dw 0C00Eh ; Flags (1100000000001110b)
+ 078C  07		      C 		db 7	; number of links 
+ 078D  00		      C 		db 0	; user ID (0 = root)
+ 078E  0070		      C 		dw size_root_dir ; initial size = 70 bytes 
+ 0790  0008 [		      C 		dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 07A0  00000000		      C 		dd 0	; creation date & time
+ 07A4  00000000		      C 		dd 0	; modification date & time
+ 07A8  0000		      C 		dw 0	; unused
+ 07AA			      C dev_inode: ; 42
+ 07AA  C00E		      C 		dw 0C00Eh ; Flags (1100000000001110b)
+ 07AC  02		      C 		db 2	; number of links 
+ 07AD  00		      C 		db 0	; user ID (0 = root)
+ 07AE  0170		      C 		dw size_dev_dir ; 200
+ 07B0  0008 [		      C 		dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 07C0  00000000		      C 		dd 0	; creation date & time
+ 07C4  00000000		      C 		dd 0	; modification date & time
+ 07C8  0000		      C 		dw 0	; unused	
+ 07CA			      C bin_inode: ; 43
+ 07CA  C00E		      C 		dw 0C00Eh ; Flags (1100000000001110b)
+ 07CC  02		      C 		db 2	; number of links 
+ 07CD  00		      C 		db 0	; user ID (0 = root)
+ 07CE  0020		      C 		dw size_bin_dir ; 20
+ 07D0  0008 [		      C 		dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 07E0  00000000		      C 		dd 0	; creation date & time
+ 07E4  00000000		      C 		dd 0	; modification date & time
+ 07E8  0000		      C 		dw 0	; unused
+ 07EA			      C etc_inode: ; 44
+ 07EA  C00E		      C 		dw 0C00Eh ; Flags (1100000000001110b)
+ 07EC  02		      C 		db 2	; number of links 
+ 07ED  00		      C 		db 0	; user ID (0 = root)
+ 07EE  0020		      C 		dw size_etc_dir ; 20
+ 07F0  0008 [		      C 		dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 0800  00000000		      C 		dd 0	; creation date & time
+ 0804  00000000		      C 		dd 0	; modification date & time
+ 0808  0000		      C 		dw 0	; unused				
+ 080A			      C usr_inode: ; 45
+ 080A  C00E		      C 		dw 0C00Eh ; Flags (1100000000001110b)
+ 080C  02		      C 		db 2	; number of links 
+ 080D  00		      C 		db 0	; user ID (0 = root)
+ 080E  0020		      C 		dw size_usr_dir ; 20
+ 0810  0008 [		      C 		dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 0820  00000000		      C 		dd 0	; creation date & time
+ 0824  00000000		      C 		dd 0	; modification date & time
+ 0828  0000		      C 		dw 0	; unused
+ 082A			      C tmp_inode: ; 46
+ 082A  C00F		      C 		dw 0C00Fh ; Flags (1100000000001111b)
+ 082C  02		      C 		db 2	; number of links 
+ 082D  00		      C 		db 0	; user ID (0 = root)
+ 082E  0020		      C 		dw size_tmp_dir ; 20
+ 0830  0008 [		      C 		dw 8 dup (0) ; indirect or contents blocks
+        0000
+       ]
+ 0840  00000000		      C 		dd 0	; creation date & time
+ 0844  00000000		      C 		dd 0	; modification date & time
+ 0848  0000		      C 		dw 0	; unused
+			      C 
+			      C align 16
+			      C 
+ 0850			      C Buffer:
+ 0850			      C sector_buffer:
+ 0850  0200 [		      C db 512 dup (0)
+        00
+       ]
+			      C 
+				include         unixproc.asm
+			      C ; UNIXPROC.ASM
+			      C ;---------------------------------------------------------------
+			      C ; RETRO UNIX v0.1 'fd0' formatting procedures
+			      C ; Last Update: 04/04/2022
+			      C ; ERDOGAN TAN
+			      C ; 01/03/2013, 03/03/2013, 05/03/2013, 09/07/2013
+			      C ; 16/12/2012 -> sioreg (bugfix)
+			      C ; [ 14-27/7/2012, 4-21/8/2012, 16/9/2012, 20/10/2012, 31/10/2012 ]
+			      C ; These procedures will be located in UNIXFDFS.ASM file 
+			      C ; when they are completed.
+			      C ; (NOTE: only for (R)UFS initialization of FD0 1.44MB floppy disk
+			      C 
+			      C ; 04/04/2022 (Inode Table/List Start Address Modification) (3->2)
+			      C 
+ = 0100			      C err_INVALIDDATA equ 100h
+ = 0200			      C err_NOFREEBLOCK equ 200h
+			      C 
+ 0A50			      C iget 	proc near
+			      C 	; 16/09/2012
+			      C      	; 14/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1 
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	; (cdev, idev,mnt, mntd are excluded)
+			      C 	;; return => if cf=1 error number in [Error]  
+			      C 
+ 0A50  3B 1E 0EB5 R	      C 	cmp bx, word ptr [ii] ; BX (R1) = i-number of current file
+ 0A54  74 2E		      C 	je short iget_5
+ 0A56			      C iget_1:
+ 0A56  50		      C 	push ax
+ 0A57  32 E4		      C 	xor ah, ah ; mov ah, 0
+ 0A59  A0 0EB4 R	      C 	mov al, byte ptr [imod]
+ 0A5C  22 C0		      C 	and al, al ; has i-node of current file been modified ?	
+ 0A5E  74 14		      C 	jz short iget_2
+ 0A60  32 C0		      C 	xor al, al ; mov al, 0
+ 0A62  A2 0EB4 R	      C 	mov byte ptr [imod], al 
+ 0A65  53		      C 	push bx
+ 0A66  8B 1E 0EB5 R	      C 	mov bx, word ptr [ii]	
+ 0A6A  FE C0		      C 	inc al ; mov al, 1
+			      C 	; ax = 1 = write
+ 0A6C  E8 0016		      C 	call icalc
+ 0A6F  5B		      C 	pop bx
+ 0A70  72 11		      C 	jc short iget_4
+			      C 	; 16/9/2012
+ 0A72  32 C0		      C 	xor al, al ; xor ax, ax
+ 0A74			      C iget_2:
+ 0A74  23 DB		      C 	and bx, bx
+ 0A76  74 07		      C 	jz short iget_3
+ 0A78  89 1E 0EB5 R	      C 	mov word ptr [ii], bx		
+			      C 	; ax = 0 = read
+ 0A7C  E8 0006		      C 	call icalc
+ 0A7F			      C iget_3:
+ 0A7F  8B 1E 0EB5 R	      C 	mov bx, word ptr [ii]
+ 0A83			      C iget_4:
+ 0A83  58		      C 	pop ax
+ 0A84			      C iget_5:
+ 0A84  C3		      C 	retn
+			      C 
+ 0A85			      C iget	endp
+			      C 
+ 0A85			      C icalc 	proc near
+			      C 	; 04/04/2022 (47->31)
+			      C 	; 17/08/2012
+			      C 	; 16/08/2012
+			      C 	; 15/08/2012
+			      C 	; 14/08/2012
+			      C 	; 13/08/2012
+			      C         ; 15/07/2012
+			      C      	; 14/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1, CX=R3, DX=R5 
+			      C 	; 0 = read, 1 = write
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	;
+			      C         ; i-node is located in block (i+47)/16 and
+			      C 	; begins 32*(i+47) mod 16 bytes from its start
+			      C 	;; return => if cf=1 error number in [Error]
+			      C 
+			      C 	; input -> ax = 0 -> read, 1 = Write
+			      C 
+			      C 	;add bx, 47 ; add 47 to inode number, 15/8/2012
+			      C 	; 04/04/2022
+ 0A85  83 C3 1F		      C 	add bx, 31 ; add 31 to inode number
+ 0A88  53		      C 	push bx ; R1 -> -(SP)
+ 0A89  D1 EB		      C 	shr bx, 1 ; divide by 16
+ 0A8B  D1 EB		      C 	shr bx, 1
+ 0A8D  D1 EB		      C 	shr bx, 1
+ 0A8F  D1 EB		      C 	shr bx, 1
+			      C 		  ; bx contains block number of block in which
+			      C 		  ; inode exists
+ 0A91  E8 0031		      C 	call dskrd
+ 0A94  5A		      C 	pop dx ; 14/8/2012
+ 0A95  72 2D		      C 	jc short icalc_5
+			      C 
+ 0A97			      C icalc_1:
+ 0A97  83 E2 0F		      C 	and dx, 0Fh ; (i+31) mod 16 (2022) ; (i+47) mod 16
+ 0A9A  D1 E2		      C 	shl dx, 1
+ 0A9C  D1 E2		      C 	shl dx, 1
+ 0A9E  D1 E2		      C 	shl dx, 1
+ 0AA0  D1 E2		      C 	shl dx, 1
+ 0AA2  D1 E2		      C 	shl dx, 1 
+			      C 		  ; DX = 32*((i+31)mod16) ; 32*((i+47)mod16)
+			      C                   ; DX (R5) points to first word in i-node i.
+			      C 
+			      C 	; 14/8/2012
+ 0AA4  57		      C 	push di
+ 0AA5  56		      C 	push si
+			      C 	
+ 0AA6  BE 076A R	      C 	mov si, offset inode ; 14/8/2012
+			      C 		; inode is address of first word of current inode
+ 0AA9  B9 0010		      C 	mov cx, 16 ; CX = R3	
+			      C 
+ 0AAC  50		      C 	push ax
+			      C 
+ 0AAD  BF 0850 R	      C 	mov di, offset Buffer ; 16/8/2012
+			      C 
+ 0AB0  03 FA		      C 	add di, dx ; 13/8/2012
+			      C 
+ 0AB2  23 C0		      C  	and ax, ax
+ 0AB4  74 07		      C 	jz short icalc_3 ; 0 = read (and copy i-node to memory) 
+			      C 
+ 0AB6			      C icalc_2:
+			      C 	; 14/8/2012
+			      C 	; over write old i-node (in buffer to be written)
+ 0AB6  F3/ A5		      C 	rep movsw
+			      C 
+			      C 	; 31/10/2012
+ 0AB8  E8 002E		      C 	call dskwr
+ 0ABB  EB 04		      C 	jmp short icalc_4
+			      C 
+ 0ABD			      C icalc_3:
+ 0ABD  87 F7		      C 	xchg si, di ; 14/8/2012		
+			      C 	; copy new i-node into inode area of (core) memory
+ 0ABF  F3/ A5		      C 	rep movsw
+			      C 
+ 0AC1			      C icalc_4:
+ 0AC1  58		      C 	pop ax
+			      C 	; 14/8/2012
+ 0AC2  5E		      C 	pop si
+ 0AC3  5F		      C 	pop di
+			      C 
+			      C 	; OUTPUTS ->
+			      C 	; inode 
+			      C 	; DX/R5 (internal), BX/R1 (internal), CX/R3 (internal) 
+			      C 
+ 0AC4			      C icalc_5:	
+ 0AC4  C3		      C 	retn		 
+			      C 
+ 0AC5			      C icalc 	endp
+			      C 	
+ 0AC5			      C dskrd	proc near
+			      C 	; 31/10/2012
+			      C 	; 19/08/2012
+			      C 	; 15/07/2012
+			      C     	; 14/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1, CX=R3, DX=R5 
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	; 
+			      C 	; BX = R1 = block/sector number
+			      C 	;
+			      C 	; call bufaloc ; get a free I/O buffer
+			      C         ; R5 = pointer to buffer
+			      C 	;; return => if cf=1 error number in [Error]
+			      C 
+ 0AC5  3B 1E 02F5 R	      C 	cmp bx, word ptr [buff_s] ; buffer sector
+ 0AC9  74 1D		      C 	je short dskrd_4
+			      C 	
+ 0ACB			      C dskrd_1:
+ 0ACB  80 3E 02F7 R 00	      C 	cmp byte ptr [buff_m], 0 ; is buffer data changed ?
+ 0AD0  76 0A		      C 	jna short dskrd_3
+			      C 	
+ 0AD2  C6 06 02F8 R 01	      C 	mov byte ptr [buff_w], 1 ; r/w flag = write
+ 0AD7  E8 0018		      C 	call poke
+ 0ADA  72 0C		      C 	jc short dskrd_4
+ 0ADC			      C dskrd_3:
+ 0ADC  89 1E 02F5 R	      C 	mov word ptr [buff_s], bx 
+ 0AE0  C6 06 02F8 R 00	      C 	mov byte ptr [buff_w], 0 ; r/w flag = read
+ 0AE5  E8 000A		      C 	call poke
+ 0AE8			      C dskrd_4:
+			      C 	; 19/8/2012
+ 0AE8  C3		      C         retn
+			      C 
+ 0AE9			      C dskrd 	endp
+			      C 
+ 0AE9			      C dskwr	proc near
+			      C 	; 31/10/2012
+			      C 	; 15/07/2012
+			      C     	; 14/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1, CX=R3, DX=R5 
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	; 
+			      C 	;; return => if cf=1 error number in [Error]
+			      C 	;; cf = 1 => dx = 0
+			      C 	; input:
+			      C 	; BX = Block/Sector number
+			      C 
+ 0AE9			      C dskwr_1:
+ 0AE9  C6 06 02F8 R 01	      C 	mov byte ptr [buff_w], 1 ; r/w flag = write
+ 0AEE  E8 0001		      C 	call poke
+			      C 	; cf = 1 -> Error code in [Error]	
+			      C 	; cf = 0 -> Successful
+ 0AF1  C3		      C 	retn
+			      C 
+ 0AF2			      C dskwr 	endp		
+			      C 	
+ 0AF2			      C poke	proc near
+			      C 	; 15/07/2012
+			      C     	; Basic I/O functions for block structured devices
+			      C 	;
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1, CX=R3, DX=R5 
+			      C 	; [SP] = Argument 1, 0 = read, 1 = write
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	; 
+			      C 	; [buff_s] = block/sector number
+			      C 	; [buff_w] = read/write flag (1=write, 0=read)
+			      C 
+			      C 	;; return => if cf=1 error number in [Error]
+			      C 
+ 0AF2  C7 06 0EB1 R 0000      C 	mov word ptr [Error], 0 ; Error code reset
+			      C 
+ 0AF8  80 3E 02F8 R 01	      C 	cmp byte ptr [buff_w], 1
+ 0AFD  76 06		      C 	jna short poke_1
+			      C 
+ 0AFF  FE 06 0EB2 R	      C 	inc byte ptr [Error]+1  ; mov byte ptr [Error]+1, 1 
+			      C 	; high byte 1 -> invalid data/parameter
+			      C 
+ 0B03  F9		      C 	stc
+ 0B04  C3		      C 	retn
+ 0B05			      C poke_1:
+			      C 	; Physical dik read/write for 8086 PC (via ROMBIOS) 
+ 0B05  E8 0008		      C 	call fd_rw_sector
+ 0B08  72 05		      C 	jc short poke_2
+			      C 
+ 0B0A  C6 06 02F7 R 00	      C 	mov byte ptr [buff_m], 0
+ 0B0F			      C poke_2:
+ 0B0F  C3		      C 	retn
+			      C 	
+ 0B10			      C poke	endp
+			      C 
+ 0B10			      C fd_rw_sector proc near
+			      C 	; 14/08/2012
+			      C 	; 15/07/2012
+			      C 	; Only for 1.44 MB Floppy Disks (18 sector/track)
+			      C          
+			      C 	; buff_s = sector number, buffer = r/w buffer offset
+			      C 	; buff_d = phy drv number, buff_w = 0/1 -> r/w
+			      C 	
+			      C 	;push es
+ 0B10  53		      C 	push bx
+ 0B11  52		      C 	push dx
+ 0B12  51		      C 	push cx
+ 0B13  50		      C 	push ax
+			      C 
+			      C 	;push ds
+			      C 	;pop es
+ 0B14  BB 0850 R	      C 	mov bx, offset Buffer
+			      C 
+ 0B17  32 ED		      C 	xor ch, ch
+ 0B19  8A 0E 10AB R	      C 	mov cl, byte ptr [RetryCount] ; 4
+ 0B1D			      C fd_rw_sector_1:
+ 0B1D  51		      C 	push cx
+ 0B1E  A1 02F5 R	      C 	mov ax, word ptr [buff_s]   ; LOGICAL SECTOR NUMBER
+ 0B21  BA 0012		      C 	mov dx, 18                  ; Sectors per track
+ 0B24  F6 F2		      C 	div dl                      
+ 0B26  8A CC		      C 	mov cl, ah                  ; Sector (zero based)
+ 0B28  FE C1		      C 	inc cl                      ; To make it 1 based
+ 0B2A  D0 E8		      C 	shr al, 1		       ; Convert Track to Cylinder
+ 0B2C  80 D6 00		      C 	adc dh, 0                   ; Heads (0 or 1)
+			      C 
+ 0B2F  8A 16 02F4 R	      C 	mov dl, byte ptr [buff_d]   ; Physical drive number 
+ 0B33  8A E8		      C 	mov ch, al
+			      C 
+ 0B35  8A 26 02F8 R	      C 	mov ah, byte ptr [buff_w]   ; 0=read, 1=write (unix)
+ 0B39  80 C4 02		      C 	add ah, 2		    ; 2=read, 3=write (bios) 	
+ 0B3C  B0 01		      C 	mov al, 01h
+ 0B3E  CD 13		      C 	int 13h                     ; BIOS Service func ( ah ) = 2
+			      C 				    ; Read disk sectors
+			      C 				    ; BIOS Service func ( ah ) = 3
+			      C 				    ; Write disk sectors
+			      C 				    ;AL-sec num CH-cyl CL-sec
+			      C 				    ; DH-head DL-drive ES:BX-buffer
+			      C 				    ;CF-flag AH-stat AL-sec read
+ 0B40  88 26 0EB1 R	      C 	mov byte ptr [Error], ah
+ 0B44  59		      C 	pop cx
+ 0B45  73 02		      C 	jnc short fd_rw_sector_2
+ 0B47  E2 D4		      C 	loop fd_rw_sector_1
+ 0B49			      C fd_rw_sector_2:
+ 0B49  58		      C 	pop ax
+ 0B4A  59		      C 	pop cx
+ 0B4B  5A		      C 	pop dx
+ 0B4C  5B		      C 	pop bx
+			      C 	;pop es
+ 0B4D  C3		      C 	retn
+			      C 
+ 0B4E			      C fd_rw_sector endp
+			      C 
+ 0B4E			      C setimod proc near
+			      C 	; 13/08/2012
+			      C 	; 21/07/2012
+			      C 	; 14/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1, CX=R3, DX=R5 
+			      C 	; [SP] = Argument 1, 0 = read, 1 = write
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	;
+			      C 
+			      C 	; 21/7/2012
+ 0B4E  52		      C 	push dx
+ 0B4F  50		      C 	push ax
+			      C 
+ 0B50  C6 06 0EB4 R 01	      C 	mov byte ptr [imod], 1
+			      C 
+			      C 	; Erdogan Tan 14-7-2012
+ 0B55  E8 022D		      C 	call epoch
+			      C 	
+ 0B58  A3 0784 R	      C 	mov word ptr [i_mtim], ax
+ 0B5B  89 16 0786 R	      C 	mov word ptr [i_mtim]+2, dx
+			      C 
+			      C 	; 21/7/2012
+ 0B5F  83 3E 0780 R 00	      C 	cmp word ptr [i_ctim], 0
+ 0B64  77 0E		      C 	ja short @f
+ 0B66  83 3E 0782 R 00	      C 	cmp word ptr [i_ctim]+2, 0
+ 0B6B  77 07		      C 	ja short @f
+			      C 
+ 0B6D  A3 0780 R	      C 	mov word ptr [i_ctim], ax
+ 0B70  89 16 0782 R	      C 	mov word ptr [i_ctim]+2, dx
+ 0B74			      C @@:
+			      C 	; 21/7/2012
+ 0B74  58		      C 	pop ax
+ 0B75  5A		      C 	pop dx
+			      C 
+ 0B76  C3		      C 	retn
+			      C 
+ 0B77			      C setimod endp
+			      C 
+ 0B77			      C imap	proc near
+			      C 	; 21/08/2012
+			      C 	; 05/08/2012
+			      C      	; 16/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	;
+			      C 	; get the byte that the allocation bit 
+			      C 	; for the i-number contained in R1
+			      C 		
+ 0B77  8B D3		      C 	mov dx, bx   ; DX = R2, BX = R1 (input, i-number)
+ 0B79  83 EA 29		      C 	sub dx, 41   ; DX has i-41
+ 0B7C  8A CA		      C 	mov cl, dl   ; CX = R3		
+ 0B7E  B8 0001		      C 	mov ax, 1    ;	
+ 0B81  80 E1 07		      C 	and cl, 7    ; CX has (i-41) mod 8 to get the bit position 	 	
+ 0B84  74 02		      C 	jz short @f  ; 21/8/2012
+ 0B86  D3 E0		      C 	shl ax, cl   ; AX has 1 in the calculated bit position
+ 0B88			      C @@:
+ 0B88  D1 EA		      C 	shr dx, 1
+ 0B8A  D1 EA		      C 	shr dx, 1
+ 0B8C  D1 EA		      C 	shr dx, 1    ; DX has (i-41) base 8 of byte number
+			      C 		     ; from the start of the (inode) map		
+			      C 	; 5/8/2012		
+ 0B8E  03 16 0300 R	      C 	add dx, word ptr [systm] ; superblock free map size + 4
+			      C 	; 21/8/2012
+ 0B92  81 C2 0304 R	      C 	add dx, offset systm+4 ; is inode map offset in superblock	
+			      C 	; AX (MQ) has a 1 in the calculated bit position
+			      C 	; CX (R3) used internally 
+			      C 	; DX (R2) has byte address of the byte with allocation bit
+ 0B96  C3		      C 	retn
+			      C 
+ 0B97			      C imap	endp
+			      C 
+ 0B97			      C writei proc near
+			      C 	; 31/10/2012
+			      C 	; 18/08/2012
+			      C 	; 17/07/2012
+			      C 	; BX = R1, i-number
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; AX=R0, BX=R1, i-number 
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	;
+			      C 	; writei: write file
+			      C 	;
+			      C 	; 8086 CPU & IBM PC architecture modifications by Erdogan Tan 
+			      C 	;; return => if cf=1 error number in [Error]
+			      C 
+			      C 	; input:
+			      C 	; BX = R1 = I-Number
+			      C 	; u.count = byte count
+			      C 	; u.base = user buffer (offset)
+			      C 	; u.fofp = (pointer to) current file offset
+			      C  
+ 0B97  33 C0		      C 	xor ax, ax ; 0		   ; clr u.nread	
+ 0B99  A3 0768 R	      C 	mov word ptr [u_nread], ax ; clear the number of bytes transmitted during
+			      C 				   ; read or write calls 
+			      C 				   ; tst u.count		
+ 0B9C  39 06 0762 R	      C 	cmp word ptr [u_count], ax ; test the byte count specified by the user
+			      C 	;ja short write_1 ; 1f	   ; bgt 1f / any bytes to output; yes, branch
+			      C 	;retn			   ; rts 0 / no, return - no writing to do
+ 0BA0  76 05		      C 	jna short @f
+			      C 
+ 0BA2			      C write_1:
+ 0BA2  83 FB 28		      C 	cmp bx, 40              ;cmp	r1,$40.
+			      C 			        ; does the i-node number indicate a special file?
+ 0BA5  77 01		      C 	ja	short dskw_0    ; bgt dskw / no, branch to standard file output
+ 0BA7			      C @@:
+ 0BA7  C3		      C 	retn
+			      C 
+			      C ;	shl	bx, 1           ; asl r1 
+			      C 			        ; yes, calculate the index into the special file
+			      C 
+			      C ;	cmp bx, offset write_3 - offset writei_2 + 2
+			      C ;	ja short writei_error
+			      C 
+			      C ;	jmp	 word ptr [write_2][BX]-2 ; *1f-2(r1)
+			      C 		                ; jump table and jump to the appropriate routine
+			      C ;write_2: ;1
+			      C ;	dw offset wtty	; tty
+			      C ;	dw offset wmem	; mem
+			      C ;	dw offset wfd ; fd0
+			      C ;	dw offset wfd ; fd1
+			      C ;	dw offset whd ; hd0
+			      C ;	dw offset whd ; hd1
+			      C ;	dw offset whd ; hd2
+			      C ;	dw offset whd ; hd3
+			      C ;	dw offset xmtt ; tty0
+			      C ;	dw offset xmtt ; tty1
+			      C ;	dw offset xmtt ; tty2
+			      C ;	dw offset xmtt ; tty3
+			      C ;	dw offset xmtt ; tty4
+			      C ;	dw offset xmtt ; tty5
+			      C ;	dw offset xmtt ; tty6
+			      C ;	dw offset xmtt ; tty7
+			      C ;	dw offset w1pr ; lpr
+			      C ; writei_3:	
+			      C ;	dw offset writei_error
+			      C 
+			      C ;wtty: ; write to concole tty
+			      C ;	retn
+			      C ;wmem: ; transfer characters from a user area of core to memory
+			      C ;	retn
+			      C 
+			      C ;wfd:  ; write to floppy disk (drive)	
+			      C ;	retn
+			      C 
+			      C ;whd:  ; write to hard/fixed disk (drive)	
+			      C ;	retn
+			      C ;wlpr  ; write to printer
+			      C ;	retn
+			      C 	
+			      C ;xmtt:
+			      C ;	retn
+			      C 
+ 0BA8			      C writei 	endp
+			      C 
+ 0BA8			      C dskw	proc near
+			      C 	; 01/03/2013
+			      C 	; 31/10/2012
+			      C 	; 19/08/2012
+			      C 	; 30/07/2012
+			      C      	; 17/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	; dskw: write routine for non-special files
+			      C 	;
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	;
+			      C 	; write data to a file
+			      C 	;
+			      C 	; BX (R1) = I-node number
+			      C 	;
+			      C 
+ 0BA8			      C dskw_0:
+ 0BA8  57		      C 	push di
+ 0BA9  56		      C 	push si
+			      C 
+ 0BAA  53		      C 	push bx	; save i-number on stack
+			      C 
+ 0BAB  E8 FEA2		      C 	call iget 	; jsr	r0,iget
+			      C 		  	; write i-node out (if modified), read i-node 'r1'
+			      C 		        ; into i-node area of core
+ 0BAE  72 4D		      C 	jc short dskw_5 ; 01/03/2013
+ 0BB0  8B 36 0766 R	      C 	mov si, word ptr [u_fofp]
+ 0BB4  8B 14		      C 	mov dx, word ptr [SI] 
+			      C 			; mov *u.fofp,r2 
+			      C 			; put the file offset [(u.off) or the offset in
+			      C 		        ; the fsp entry for this file] in r2
+ 0BB6  03 16 0762 R	      C 	add dx, word ptr [u_count]
+			      C 			; add u.count,r2 
+			      C 			; no. of bytes to be written + file offset is
+			      C 		        ; put in r2
+			      C 
+ 0BBA  3B 16 076E R	      C 	cmp dx, word ptr [i_size] ; cmp r2,i.size
+			      C 		         ; is this greater than the present size of
+			      C 		         ; the file?
+ 0BBE  76 07		      C 	jna short dskw_1 ; blos	 1f / no, branch
+			      C 
+ 0BC0  89 16 076E R	      C 	mov word ptr [i_size], dx ; mov	r2,i.size 
+			      C 			 ; yes, increase the file size to file offset +
+			      C 		         ; no. of data bytes
+ 0BC4  E8 FF87		      C 	call setimod     ; jsr r0,setimod 
+			      C 			 ; set imod=1 (i.e., core inode has been
+			      C 		         ; modified), stuff time of modification into
+			      C 		         ; core image of i-node
+ 0BC7			      C dskw_1: ; 1 		
+ 0BC7  E8 0048		      C 	call mget 	; jsr r0,mget 
+			      C 			; get the block no. in which to write the next data
+			      C   		        ; byte
+			      C 			; AX = R1 = Block Number
+ 0BCA  72 31		      C 	jc short dskw_5 ; 01/03/2013
+ 0BCC  8B 36 0766 R	      C 	mov si, word ptr [u_fofp]
+ 0BD0  8B 1C		      C 	mov bx, word ptr [SI]
+ 0BD2  81 E3 01FF	      C 	and bx, 1FFh  		 ; bit	*u.fofp,$777
+			      C 				 ; test the lower 9 bits of the file offset
+ 0BD6  75 08		      C 	jnz short dskw_2 ; bne 2f 
+			      C 			; if its non-zero, branch; if zero, file offset = 0,
+			      C 		   	; 512, 1024,...(i.e., start of new block)
+ 0BD8  81 3E 0762 R 0200      C 	cmp word ptr [u_count], 512 ; cmp u.count,$512.
+			      C 			        ; if zero, is there enough data to fill an
+			      C 		              	; entire block? (i.e., no. of
+ 0BDE  73 21		      C 	jnb short dskw_6 ; bhis	3f / bytes to be written greater than 512.? 
+			      C 			; Yes, branch. / Don't have to read block
+			      C 
+ 0BE0			      C dskw_2: ; 2
+			      C 	; in as no past info. is to be saved (the entire block will be
+			      C         ; overwritten).
+			      C 
+ 0BE0  8B D8		      C 	mov bx, ax	; R1 (block number)
+ 0BE2  E8 FEE0		      C 	call dskrd 	; jsr r0,dskrd 
+			      C 			; no, must retain old info.. Hence, read block 'r1'
+			      C 		        ; into an I/O buffer
+ 0BE5  72 16		      C 	jc short dskw_5 ; 01/03/2013
+ 0BE7			      C dskw_3: ; 3
+			      C 	;call wslot
+			      C 	
+ 0BE7  E8 0164		      C 	call sioreg
+			      C 
+			      C 	; SI = user data offset (r1)
+			      C 	; DI = sector (I/O) buffer offset (r2)
+			      C 	; CX = byte count (r3)
+			      C 
+ 0BEA			      C dskw_4: ; 2
+ 0BEA  F3/ A4		      C 	rep movsb
+			      C 
+ 0BEC  C6 06 02F7 R 01	      C 	mov byte ptr [buff_m], 1
+			      C 
+ 0BF1  E8 FEF5		      C 	call dskwr ; jsr r0,dskwr / write the block and the i-node
+ 0BF4  72 07		      C         jc short dskw_5
+			      C 	
+ 0BF6  83 3E 0762 R 00	      C         cmp word ptr [u_count], 0 ; any more data to write?
+ 0BFB  77 CA		      C 	ja short dskw_1 ; 1b   ; yes, branch
+			      C 
+ 0BFD			      C dskw_5:
+ 0BFD  5B		      C 	pop bx
+			      C 
+ 0BFE  5E		      C 	pop si
+ 0BFF  5F		      C 	pop di
+			      C 
+ 0C00  C3		      C 	retn
+			      C 
+ 0C01			      C dskw_6:
+ 0C01  80 3E 02F7 R 01	      C 	cmp byte ptr [buff_m], 1
+ 0C06  72 DF		      C 	jb short dskw_3
+ 0C08  E8 FEDE		      C 	call dskwr
+ 0C0B  72 F0		      C 	jc short dskw_5
+ 0C0D  A3 02F5 R	      C 	mov word ptr [buff_s], ax ; block number from mget procedure
+ 0C10  EB D5		      C 	jmp short dskw_3
+			      C 
+ 0C12			      C dskw 	endp
+			      C 
+ 0C12			      C mget 	proc near
+			      C 	; 05/03/2013
+			      C 	; 01/03/2013
+			      C 	; 31/10/2012
+			      C 	; 20/10/2012
+			      C 	; 19/08/2012
+			      C 	; 13/08/2012
+			      C 	; 27/07/2012
+			      C      	; 21/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; return -> AX=R1
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 	; cf -> 1 = error (no free block)
+			      C 
+			      C 	;push bx
+			      C 	;push cx
+			      C 	;push dx
+			      C 	 ;; contents of bx, cx, dx will be destroyed 
+ 0C12			      C mget_0:
+			      C 	; 31/10/2012
+ 0C12  8B 1E 0766 R	      C 	mov bx, word ptr [u_fofp]
+ 0C16  8B 07		      C 	mov ax, word ptr [BX]
+ 0C18  8A DC		      C 	mov bl, ah  ; div ax by 256
+ 0C1A  32 FF		      C 	xor bh, bh
+			      C 
+			      C 	; BX = R2
+ 0C1C  F7 06 076A R 1000      C         test word ptr [i_flgs], 4096 ; 1000h
+			      C 			  	     ; is this a large or small file
+ 0C22  75 63		      C 	jnz short mget_5 ; 4f ; large file
+ 0C24  F6 C3 F0		      C         test bl, 0F0h ; !0Fh  ; branch if BX (R2) >= 16                    
+ 0C27  75 1B		      C 	jnz short mget_2 ; 3f
+			      C 	
+ 0C29  80 E3 0E		      C 	and bl, 0Eh  ; clear all bits but bits 1,2,3
+ 0C2C  8B 87 0770 R	      C 	mov ax, word ptr i_dskp[BX] ; AX = R1, physical block number
+ 0C30  0B C0		      C 	or ax, ax
+ 0C32  75 0F		      C 	jnz short mget_1 ; if physical block number is zero
+			      C 			 ; then need a new block for file
+ 0C34  E8 0090		      C 	call alloc	 ; allocate a new block for this file	
+			      C 			 ; AX (R1) = Block number
+ 0C37  72 47		      C 	jc short mget_8	 ; cf -> 1 & ax = 0 -> no free block
+			      C 	
+ 0C39  89 87 0770 R	      C 	mov word ptr i_dskp[BX], ax
+			      C 
+ 0C3D  E8 FF0E		      C 	call setimod
+			      C 	
+ 0C40  E8 00EF		      C 	call clear
+			      C 	
+ 0C43			      C mget_1: ; 2
+			      C 	; AX (R1) = Physical block number
+			      C 
+			      C 	;pop dx
+			      C 	;pop cx
+			      C 	;pop bx
+			      C 
+ 0C43  C3		      C 	retn
+			      C 
+ 0C44			      C mget_2: ; 3
+			      C 	; adding on block which changes small file to large file
+ 0C44  E8 0080		      C 	call alloc
+ 0C47  72 37		      C 	jc short mget_8 ; 01/03/2013 
+			      C 	; call wslot  ; setup I/O buffer for write
+			      C 	;	   ; R5 points to the first data word in buffer
+			      C 
+			      C 	; push ds
+			      C 	; pop es
+			      C 
+ 0C49  A3 02F5 R	      C 	mov word ptr [buff_s], ax  ; Block/Sector number
+			      C 
+ 0C4C  56		      C 	push si
+ 0C4D  57		      C 	push di
+ 0C4E  50		      C 	push ax
+			      C 
+ 0C4F  B9 0008		      C 	mov cx, 8  ; R3, transfer old physical block pointers
+			      C 		   ; into new indirect block area for the new
+			      C 		   ; large file		
+ 0C52  BF 0850 R	      C 	mov di, offset Buffer ; BX = R5
+ 0C55  BE 0770 R	      C 	mov si, offset i_dskp 
+			      C 
+ 0C58  33 C0		      C 	xor ax, ax ; mov ax, 0
+ 0C5A			      C mget_3: ; 1
+ 0C5A  A5		      C 	movsw
+ 0C5B  89 44 FE		      C 	mov word ptr [SI]-2, ax
+ 0C5E  E2 FA		      C 	loop mget_3
+			      C 	
+ 0C60  B1 F8		      C 	mov cl, 256-8 ; clear rest of data buffer
+			      C 
+ 0C62			      C mget_4:	; 1
+ 0C62  F3/ AB		      C 	rep stosw
+			      C 
+ 0C64  58		      C 	pop ax
+ 0C65  5F		      C 	pop di
+ 0C66  5E		      C 	pop si
+			      C 
+ 0C67  C6 06 02F7 R 01	      C 	mov byte ptr [buff_m], 1 ; modified
+			      C 
+ 0C6C  E8 FE7A		      C 	call dskwr
+ 0C6F  72 55		      C 	jc short mget_7 ; 01/03/2013	
+			      C 
+ 0C71  A3 0770 R	      C 	mov word ptr [i_dskp], ax
+ 0C74  81 0E 076A R 1000      C 	or word ptr [i_flgs], 4096 ; 1000h
+			      C 	
+ 0C7A  E8 FED1		      C 	call setimod
+			      C 
+ 0C7D  EB 93		      C 	jmp short mget_0
+			      C 
+ 0C7F			      C mget_9: ; 01/03/2013
+ 0C7F  58		      C 	pop ax
+ 0C80			      C mget_8: 
+ 0C80  C7 06 0EB1 R 0200      C 	mov word ptr [Error], err_NOFREEBLOCK
+			      C 	
+			      C 	;pop dx
+			      C 	;pop cx
+			      C 	;pop bx
+			      C 
+ 0C86  C3		      C 	retn
+			      C 
+ 0C87			      C mget_5:  ; 4 ; large file
+			      C 	; 05/03/2013
+			      C 	; 03/03/2013
+			      C 	; 27/07/2012
+			      C 	;mov ax, bx
+			      C 	;mov cx, 256
+			      C 	;xor dx, dx
+			      C 	;div cx
+			      C 	;and bx, 1FEh ; zero all bit but 1,2,3,4,5,6,7,8
+			      C 		      ;	gives offset in indirect block
+			      C 	;push bx	      ; R2	
+			      C 	;mov bx, ax ; calculate offset in i-node for pointer
+			      C 		    ; to proper indirect block
+			      C 	;and bx, 0Eh
+			      C 	;mov ax, word ptr i_dskp[BX] ; R1
+ 0C87  80 E3 FE		      C 	and bl, 0FEh ; 05/03/2013
+ 0C8A  53		      C 	push bx
+ 0C8B  A1 0770 R	      C 	mov ax, word ptr [i_dskp] ; 03/03/2013
+ 0C8E  0B C0		      C 	or ax, ax  ; 20/10/2012
+ 0C90  75 0E		      C 	jnz short mget_6 ; 2f
+			      C 	
+ 0C92  E8 0032		      C 	call alloc
+ 0C95  72 E8		      C 	jc short mget_9 ; 01/03/2013 
+			      C 
+			      C 	;mov word ptr i_dskp[BX], ax  ; R1, block number
+ 0C97  A3 0770 R	      C 	mov word ptr [i_dskp], ax
+			      C 
+ 0C9A  E8 FEB1		      C 	call setimod
+			      C 
+ 0C9D  E8 0092		      C 	call clear		
+			      C 
+ 0CA0			      C mget_6: ;2
+			      C         ; 27/7/2012 
+ 0CA0  8B D8		      C 	mov bx, ax ; R1
+ 0CA2  E8 FE20		      C 	call dskrd ; read indirect block
+ 0CA5  5B		      C 	pop bx  ; R2, get offset
+			      C         ; 19/8/2012
+ 0CA6  72 1E		      C 	jc short mget_7
+ 0CA8  81 C3 0850 R	      C 	add bx, offset Buffer ; R5, first word of indirect block
+ 0CAC  8B 07		      C 	mov ax, word ptr [bx] ; put physical block no of block
+			      C 			      ; in file sought in R1 (AX)
+ 0CAE  0B C0		      C 	or ax, ax
+ 0CB0  75 14		      C         jnz short mget_7 ; 2f 
+			      C 
+ 0CB2  E8 0012		      C 	call alloc
+ 0CB5  72 C9		      C 	jc short mget_8 ; 01/03/2013
+			      C 
+ 0CB7  89 07		      C 	mov word ptr [bx], ax ; R1
+			      C 
+ 0CB9  C6 06 02F7 R 01	      C 	mov byte ptr [buff_m], 1 ; modified
+			      C 
+			      C 	;call wslot
+ 0CBE  E8 FE28		      C 	call dskwr
+ 0CC1  72 03		      C 	jc short mget_7 ; 01/03/2013
+			      C 
+			      C 	; ax = R1, block number of new block
+			      C 
+ 0CC3  E8 006C		      C 	call clear	
+			      C 
+ 0CC6			      C mget_7: ; 2
+			      C 	; ax = R1, block number of new block
+			      C 	;pop dx
+			      C 	;pop cx
+			      C 	;pop bx 
+			      C 	
+ 0CC6  C3		      C 	retn
+			      C 
+ 0CC7			      C mget	endp
+			      C 
+ 0CC7			      C alloc 	proc near
+			      C 	; 21/08/2012
+			      C 	; 18/08/2012
+			      C 	; 17/08/2012
+			      C 	; 05/08/2012		
+			      C  	; 21/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; input -> AX=R1 
+			      C 	;; output -> AX=R1
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 
+ 0CC7  51		      C 	push cx
+ 0CC8  53		      C 	push bx ; R2
+ 0CC9  52		      C 	push dx ; R3
+			      C 
+ 0CCA  BB 0300 R	      C 	mov bx, offset systm ; SuperBlock 
+			      C 		; start of inode and free storage map for disk
+ 0CCD			      C alloc_1: ; 1
+ 0CCD  8B 07		      C 	mov ax, word ptr [BX] ; first word contains # of bytes 
+			      C 	                ; in free storage map
+ 0CCF  D1 E0		      C 	shl ax, 1	; multiply AX (R1) by 8 gives # of blocks
+ 0CD1  D1 E0		      C 	shl ax, 1
+ 0CD3  D1 E0		      C 	shl ax, 1
+ 0CD5  8B C8		      C 	mov cx, ax ; R1, bit count of free storage map
+ 0CD7  33 C0		      C 	xor ax, ax ; 0
+ 0CD9			      C alloc_2: ; 1
+ 0CD9  43		      C 	inc bx ; 18/8/2012
+ 0CDA  43		      C 	inc bx ; 
+ 0CDB  8B 17		      C 	mov dx, word ptr [BX]  ; mov (R2)+, R3
+ 0CDD  0B D2		      C 	or dx, dx
+ 0CDF  75 0C		      C 	jnz short alloc_3 ; 1f
+			      C 			; branch if any free blocks in this word	
+ 0CE1  83 C0 10		      C 	add ax, 16
+ 0CE4  3B C1		      C 	cmp ax, cx    
+ 0CE6  72 F1		      C 	jb short alloc_2 ; 1b
+			      C 
+			      C 	;jmp short panic  ; no free storage 
+			      C 
+ 0CE8  33 C0		      C 	xor ax, ax
+ 0CEA  F9		      C 	stc		 ; cf=1 --> error: no free block
+			      C 
+ 0CEB  EB 13		      C 	jmp short alloc_7	
+			      C 
+ 0CED			      C alloc_3: ; 1
+ 0CED  D1 EA		      C         shr dx, 1  ; R3  ; Branch when free block found,
+			      C 			 ; bit for block k is in byte k/8 
+			      C 			 ; in bit k (mod 8) 	
+ 0CEF  72 03		      C 	jc short alloc_4 ; 1f
+ 0CF1  40		      C 	inc ax  ; R1     ; increment bit count in bit k (mod 8)    
+ 0CF2  EB F9		      C 	jmp short alloc_3 ; 1b
+			      C 	
+ 0CF4			      C alloc_4:
+			      C 	; 5/8/2012
+ 0CF4  E8 001E		      C 	call free_3
+			      C 
+ 0CF7			      C alloc_5: ; 1 
+			      C 	; 21/8/2012
+ 0CF7  F7 D2		      C 	not dx ; masking bit is '0' and others are '1'
+ 0CF9  21 17		      C 	and word ptr [BX], dx    ; bic r3, (r2) 	
+			      C 	; 0 -> allocated	retn
+ 0CFB			      C alloc_6:
+			      C 	; inc byte ptr [smod] ; super block modified sign
+ 0CFB  C6 06 0EB3 R 01	      C 	mov byte ptr [smod], 1
+ 0D00			      C alloc_7:
+ 0D00  5A		      C 	pop dx ; R3
+ 0D01  5B		      C 	pop bx ; R2
+ 0D02  59		      C 	pop cx 
+			      C 	; AX (R1) = Block number
+ 0D03  C3		      C 	retn
+			      C 
+ 0D04			      C alloc   endp
+			      C 
+ 0D04			      C free	proc near
+			      C 	; 17/08/2012
+			      C 	; 14/08/2012
+			      C 	; 05/08/2012		
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; input -> AX=R1 
+			      C 	;; output -> free map (superblock) will be updated
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 
+ 0D04  51		      C 	push cx
+ 0D05  52		      C 	push dx ; R3
+ 0D06  53		      C 	push bx ; R2
+			      C 	
+ 0D07  E8 000B		      C 	call free_3
+			      C 	; 21/8/2012
+ 0D0A  09 17		      C 	or word ptr [BX], dx ; set bit for this block (available)
+			      C 			     ; bis r3, (r2)	
+ 0D0C			      C free_1: ; 2
+			      C 	;inc byte ptr [smod] ; super block modified sign
+ 0D0C  C6 06 0EB3 R 01	      C 	mov byte ptr [smod], 1
+			      C 
+ 0D11  5B		      C 	pop bx ; R2
+ 0D12  5A		      C 	pop dx ; R1
+ 0D13  59		      C 	pop cx
+			      C 
+ 0D14			      C free_2: ; 1		
+ 0D14  C3		      C 	retn
+			      C 
+			      C ;;free_3:
+			      C ;;	mov cx, ax ; BX = R2, AX =  R1 
+			      C ;; 	;and cx, 7  ; clear all bit but 0,1,2  
+			      C ;;				; CX = (k) mod 8
+			      C ;;; bit masking
+			      C ;;	mov dx, 1
+			      C ;;	dec cl
+			      C ;;	jz short @f
+			      C ;,	shl dx, cl  ; mask bit at required bit position 	
+			      C ;;@@:
+			      C ;;	mov bx, ax  ; mov R1, R2
+			      C ;;		    ; divide block number (R2/BX) by 16	
+			      C ;;	shr bx, 1
+			      C ;;	shr bx, 1
+			      C ;;	shr bx, 1
+			      C ;;	shr bx, 1
+			      C ;;	jnc short free_4 ; 1f, branch if bit 3 in Bx (R1) was 0
+			      C ;;		  ; i.e. bit for block is in lower half of word
+			      C ;;	xchg dh, dl ; swap bytes in DX (R3),
+			      C ;;		    ; bit in upper half word in free storage map
+			      C ;;
+			      C ;;free_4: ; 1
+			      C ;;	shl bx, 1 , multiply block number by 2, BX (R2) = k/8
+			      C ;;	add bx, offset systm+2 ; SuperBlock+2
+			      C 	
+ 0D15			      C free_3:
+ 0D15  BA 0001		      C 	mov dx, 1  ; 21/8/2012	
+ 0D18  8B C8		      C 	mov cx, ax
+ 0D1A  83 E1 0F		      C 	and cx, 0Fh
+ 0D1D  74 02		      C 	jz short @f
+ 0D1F  D3 E2		      C 	shl dx, cl ; 21/8/2012
+ 0D21			      C @@:
+ 0D21  8B D8		      C 	mov bx, ax
+ 0D23  D1 EB		      C 	shr bx, 1
+ 0D25  D1 EB		      C 	shr bx, 1
+ 0D27  D1 EB		      C 	shr bx, 1
+ 0D29  D1 EB		      C 	shr bx, 1
+ 0D2B			      C free_4: ; 1
+ 0D2B  D1 E3		      C 	shl bx, 1 ; 21/8/2012
+			      C 	; BX (R2) = k/8	
+ 0D2D  81 C3 0302 R	      C 	add bx, offset systm+2 ; SuperBlock+2
+			      C 
+ 0D31  C3		      C 	retn
+			      C 
+ 0D32			      C free  	endp
+			      C 
+ 0D32			      C clear	proc near
+			      C 	; 05/08/2012
+			      C  	; 21/07/2012
+			      C      	; Derived from (original) UNIX v1 source code
+			      C 	; PRELIMINARY release of Unix Implementation Document, 
+			      C 	; 20/06/1972
+			      C 	;; input -> AX=R1 (block number)
+			      C 	;; output -> AX=R1
+			      C 	; RETRO UNIX v1 FS
+			      C 	; initialization/format version
+			      C 
+			      C 	;call wslot ; setup I/O buffer for write
+			      C 	;	   ; R5 points to the first data word in buffer
+			      C 	; BX = R5
+			      C 
+ 0D32  A3 02F5 R	      C 	mov word ptr [buff_s], ax 
+			      C 	
+			      C 	;push ds
+			      C 	;pop es
+			      C 	
+ 0D35  57		      C 	push di
+ 0D36  51		      C 	push cx
+ 0D37  50		      C 	push ax
+ 0D38  33 C0		      C  	xor ax, ax
+			      C 	; mov di, bx
+ 0D3A  BF 0850 R	      C 	mov di, offset Buffer
+ 0D3D  B9 0100		      C 	mov cx, 256 
+ 0D40  F3/ AB		      C 	rep stosw
+			      C 	
+ 0D42  C6 06 02F7 R 01	      C 	mov byte ptr [buff_m], 1 ; modified
+			      C 
+ 0D47  E8 FD9F		      C 	call dskwr ; 5/8/2012
+			      C 
+ 0D4A  58		      C 	pop ax
+ 0D4B  59		      C 	pop cx
+ 0D4C  5F		      C 	pop di	
+			      C 	
+ 0D4D  C3		      C 	retn
+			      C 
+ 0D4E			      C clear	endp
+			      C 
+ 0D4E			      C sioreg	proc near
+			      C 	; 16/12/2012
+			      C 	; 31/10/2012
+			      C 	; 19/08/2012
+			      C 	; 04/08/2012
+			      C 	; Erdogan Tan - RETRO UNIX v0.1
+			      C 	; input -> R5 (DX) = sector buffer (data) address
+			      C 	;	   *u.fofp = file offset, to start writing
+			      C 	;	   u.base = address of 1st byte of user data
+			      C 	;	   u.count = byte count  to be transferred
+			      C 	;	   u.nread = number of bytes written out
+			      C 	;		     previously.
+			      C 	; output -> *u.fofp = last (written) byte + 1
+			      C 	;	   u.count = number of bytes of data left
+			      C 	;		     to be transferred.			
+			      C 	;	   u.nread = updated to include the count
+			      C 	;		    of bytes to be transferred.
+			      C 	;	   R1 (SI) = address of 1st byte of data
+			      C 	;	   R2 (DI) = specifies the byte in IO 
+			      C 	;	            sector (I/O) buffer. (Offset)	
+			      C 	;	   R3 (CX) = number of bytes of data to be
+			      C 	;		    transferred to/from sector (I/O)
+			      C 	;		    buffer.		
+			      C 
+			      C 	;mov dx, offset Buffer  ; R5
+			      C 	; 31/10/2012	
+ 0D4E  8B 36 0766 R	      C         mov si, word ptr [u_fofp] ; mov	*u.fofp,r2 
+ 0D52  8B 3C		      C 	mov di, word ptr [SI]	  ; file offset (in bytes) is moved to r2
+ 0D54  8B CF		      C 	mov cx, di 		  ; mov	r2,r3 / and also to r3
+			      C 
+ 0D56  81 C9 FE00	      C 	or cx, 0FE00h ; set bits 9...15 of file offset in R3
+ 0D5A  81 E7 01FF	      C 	and di, 1FFh ; calculate file offset mod 512
+			      C 	; 19/08/2012
+ 0D5E  81 C7 0850 R	      C 	add di, offset Buffer ; DI/r2 now points to 1st byte in buffer
+			      C 		   ; where data is to be placed
+			      C         ;mov si, word ptr [u_base] ; address of data is in r1
+ 0D62  F7 D9		      C 	neg cx ; 512- file offset(mod512) in R3 (cx)
+			      C 			; the number of free bytes in the file block
+ 0D64  3B 0E 0762 R	      C         cmp cx, word ptr [u_count] ;compare this with the number of data bytes
+			      C 				   ; to be written to the file
+ 0D68  76 04		      C 	jna short @f ; 2f
+			      C 			   ; if less than branch. Use the number of free bytes
+			      C 		           ; in the file block as the number to be written
+ 0D6A  8B 0E 0762 R	      C         mov cx, word ptr [u_count]
+			      C 			   ; if greater than, use the number of data bytes
+			      C 		           ; as the number to be written
+ 0D6E			      C @@:	; 2
+			      C ;sioreg_1:		
+ 0D6E  01 0E 0768 R	      C 	add word ptr [u_nread], cx ; r3 + number of bytes
+			      C 			; xmitted during write is put into
+			      C                         ; u.nread
+ 0D72  29 0E 0762 R	      C         sub word ptr [u_count], cx
+			      C 			; u.count = no. of bytes that still must be
+			      C 		        ; written or read
+ 0D76  8B 36 0766 R	      C 	mov si, word ptr [u_fofp]
+ 0D7A  01 0C		      C         add word ptr [SI], cx ; new file offset = number 
+			      C 			; of bytes done + old file offset
+			      C 
+			      C 	; 16/12/2012 BugFix
+ 0D7C  8B 36 0764 R	      C         mov si, word ptr [u_base] ; address of data is in SI/r1
+			      C 
+ 0D80  01 0E 0764 R	      C         add word ptr [u_base], cx ; u.base points to 1st of remaining
+			      C 			; data bytes
+ 0D84  C3		      C 	retn
+			      C 
+ 0D85			      C sioreg	endp
+			      C 
+ 0D85			      C epoch	proc near
+			      C 	; 21/07/2012
+			      C 	; 15/07/2012
+			      C 	; 14/07/2012		
+			      C 	; Erdogan Tan - RETRO UNIX v0.1
+			      C 	; compute current date and time as UNIX Epoch/Time
+			      C 	; UNIX Epoch: seconds since 1/1/1970 00:00:00
+			      C 
+			      C 	; 21/7/2012
+ 0D85  53		      C 	push bx
+ 0D86  51		      C 	push cx
+			      C 
+ 0D87  B4 02		      C 	mov ah, 02h                      ; Return Current Time
+ 0D89  CD 1A		      C         int 1Ah
+ 0D8B  86 E9		      C         xchg ch,cl
+ 0D8D  89 0E 0E92 R	      C         mov word ptr [hour], cx
+ 0D91  86 F2		      C         xchg dh,dl
+ 0D93  89 16 0E96 R	      C         mov word ptr [second], dx
+			      C 
+ 0D97  B4 04		      C         mov ah, 04h                      ; Return Current Date
+ 0D99  CD 1A		      C         int 1Ah
+ 0D9B  86 E9		      C         xchg ch,cl
+ 0D9D  89 0E 0E8C R	      C         mov word ptr [year], cx
+ 0DA1  86 F2		      C         xchg dh,dl
+ 0DA3  89 16 0E8E R	      C         mov word ptr [month], dx
+			      C 
+ 0DA7  B9 3030		      C 	mov cx, 3030h
+			      C 
+ 0DAA  A0 0E92 R	      C 	mov al, byte ptr [hour] ; Hour
+			      C            ; AL <= BCD number)
+ 0DAD  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DAF  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 		
+ 0DB1  A2 0E92 R	      C 	mov byte ptr [hour], al
+			      C 
+ 0DB4  A0 0E93 R	      C 	mov al, byte ptr [hour]+1 ; Minute
+			      C            ; AL <= BCD number)
+ 0DB7  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DB9  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 		
+ 0DBB  A2 0E94 R	      C 	mov byte ptr [minute], al
+			      C 
+ 0DBE  A0 0E96 R	      C 	mov al, byte ptr [second] ; Second
+			      C            ; AL <= BCD number)
+ 0DC1  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DC3  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 		
+ 0DC5  A2 0E96 R	      C 	mov byte ptr [second], al
+			      C 
+			      C 	
+ 0DC8  A1 0E8C R	      C 	mov ax, word ptr [year] ; Year (century)
+ 0DCB  50		      C         push ax
+			      C 	   ; AL <= BCD number)
+ 0DCC  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DCE  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 		
+ 0DD0  B4 64		      C 	mov ah, 100
+ 0DD2  F6 E4		      C 	mul ah
+ 0DD4  A3 0E8C R	      C 	mov word ptr [year], ax
+			      C 
+ 0DD7  58		      C 	pop	ax
+ 0DD8  8A C4		      C 	mov	al, ah
+			      C            ; AL <= BCD number)
+ 0DDA  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DDC  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 		
+ 0DDE  01 06 0E8C R	      C 	add word ptr [year], ax
+			      C 
+			      C 
+ 0DE2  A0 0E8E R	      C 	mov al, byte ptr [month] ; Month
+			      C            ; AL <= BCD number)
+ 0DE5  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DE7  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 	
+ 0DE9  A2 0E8E R	      C 	mov byte ptr [month], al	
+			      C 
+			      C 
+ 0DEC  A0 0E8F R	      C 	mov al, byte ptr [month]+1 ; Day
+			      C            ; AL <= BCD number)
+ 0DEF  D4 10		      C         db 0D4h,10h                     ; Undocumented inst. AAM
+			      C 					; AH = AL / 10h
+			      C 					; AL = AL MOD 10h
+ 0DF1  D5 0A		      C         aad ; AX= AH*10+AL
+			      C 
+ 0DF3  A2 0E90 R	      C 	mov byte ptr [Day], al
+			      C 	
+ 0DF6			      C convert_to_epoch:
+			      C 
+ 0DF6  8B 16 0E8C R	      C 	mov dx, word ptr [year]
+ 0DFA  81 EA 07B2	      C 	sub dx, 1970
+ 0DFE  B8 016D		      C 	mov ax, 365
+ 0E01  F7 E2		      C 	mul dx
+ 0E03  32 FF		      C 	xor bh, bh
+ 0E05  8A 1E 0E8E R	      C 	mov bl, byte ptr [month]
+ 0E09  FE CB		      C 	dec bl
+ 0E0B  D0 E3		      C 	shl bl, 1
+ 0E0D  8B 8F 0E98 R	      C 	mov cx, word ptr DMonth[BX]
+ 0E11  8A 1E 0E90 R	      C 	mov bl, byte ptr [Day]
+ 0E15  FE CB		      C 	dec bl
+			      C 	
+ 0E17  03 C1		      C 	add ax, cx
+ 0E19  83 D2 00		      C 	adc dx, 0
+ 0E1C  03 C3		      C 	add ax, bx
+ 0E1E  83 D2 00		      C 	adc dx, 0
+			      C 				; DX:AX = days since 1/1/1970
+ 0E21  8B 0E 0E8C R	      C 	mov cx, word ptr [year]
+ 0E25  81 E9 07B1	      C 	sub cx, 1969
+ 0E29  D1 E9		      C 	shr cx, 1
+ 0E2B  D1 E9		      C 	shr cx, 1		
+			      C 		; (year-1969)/4
+ 0E2D  03 C1		      C 	add ax, cx
+ 0E2F  83 D2 00		      C 	adc dx, 0
+			      C 				; + leap days since 1/1/1970
+			      C 
+ 0E32  80 3E 0E8E R 02	      C 	cmp byte ptr [month], 2  ; if past february
+ 0E37  76 0F		      C 	jna short @f
+ 0E39  8B 0E 0E8C R	      C 	mov cx, word ptr [year]
+ 0E3D  83 E1 03		      C 	and cx, 3 ; year mod 4
+ 0E40  75 06		      C 	jnz short @f		
+			      C 				; and if leap year
+ 0E42  83 C0 01		      C 	add ax, 1 ; add this year's leap day (february 29)
+ 0E45  83 D2 00		      C 	adc dx, 0
+ 0E48			      C @@: 			; compute seconds since 1/1/1970
+ 0E48  BB 0018		      C 	mov bx, 24
+ 0E4B  E8 002A		      C 	call proc_mul32
+			      C 
+ 0E4E  8A 1E 0E92 R	      C 	mov bl, byte ptr [hour]
+ 0E52  03 C3		      C 	add ax, bx
+ 0E54  83 D2 00		      C 	adc dx, 0
+			      C 	
+ 0E57  BB 003C		      C 	mov bx, 60
+ 0E5A  E8 001B		      C 	call proc_mul32
+			      C 
+ 0E5D  8A 1E 0E94 R	      C 	mov bl, byte ptr [minute]
+ 0E61  03 C3		      C 	add ax, bx
+ 0E63  83 D2 00		      C 	adc dx, 0
+			      C 	
+ 0E66  BB 003C		      C 	mov bx, 60
+ 0E69  E8 000C		      C 	call proc_mul32
+			      C 
+ 0E6C  8A 1E 0E96 R	      C 	mov bl, byte ptr [second]
+ 0E70  03 C3		      C 	add ax, bx
+ 0E72  83 D2 00		      C  	adc dx, 0
+			      C 
+			      C 	; DX:AX -> seconds since 1/1/1970 00:00:00
+			      C 
+			      C 	; 21/7/2012
+ 0E75  59		      C 	pop cx
+ 0E76  5B		      C 	pop bx
+			      C 	
+ 0E77  C3		      C 	retn
+			      C 
+ 0E78			      C epoch	endp
+			      C 
+			      C ;'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''';
+			      C ; 32 bit Multiply                                            ;
+			      C ;- - - - - - - - - - - - - - - - - - - - - - - - - -- - - - -;
+			      C ;                                                            ;
+			      C ; input -> DX_AX = 32 bit multiplier                         ;
+			      C ; input -> BX = 16 bit number to be multiplied by DX_AX      ;
+			      C ; output -> BX_DX_AX = 48 bit (16+32 bit) result number      ;
+			      C ;                                                            ;
+			      C ; (c) Erdogan TAN  1999                                      ;
+			      C ;............................................................;
+			      C 
+ 0E78			      C proc_mul32 proc near
+			      C 
+			      C 	;push cx
+			      C 
+ 0E78  8B CB		      C 	mov cx, bx
+ 0E7A  8B DA		      C 	mov bx, dx
+			      C 
+ 0E7C  F7 E1		      C 	mul cx
+			      C 
+ 0E7E  93		      C 	xchg ax, bx
+			      C 
+ 0E7F  52		      C 	push dx
+			      C 
+ 0E80  F7 E1		      C 	mul cx 
+			      C 
+ 0E82  59		      C 	pop cx 
+			      C 
+ 0E83  03 C1		      C 	add ax, cx 
+ 0E85  83 D2 00		      C 	adc dx, 0
+			      C 
+ 0E88  93		      C 	xchg bx, ax
+ 0E89  87 D3		      C 	xchg dx, bx
+			      C 
+			      C 	;pop cx
+			      C 
+ 0E8B  C3		      C 	retn
+			      C 
+ 0E8C			      C proc_mul32 endp
+			      C 
+ 0E8C 07B2		      C year:	dw 1970
+ 0E8E 0001		      C month:	dw 1
+ 0E90 0001		      C day:	dw 1
+ 0E92 0000		      C hour:	dw 0
+ 0E94 0000		      C minute:	dw 0
+ 0E96 0000		      C second:	dw 0
+			      C 
+ 0E98			      C DMonth:
+ 0E98  0000		      C dw 0
+ 0E9A  001F		      C dw 31
+ 0E9C  003B		      C dw 59
+ 0E9E  005A		      C dw 90
+ 0EA0  0078		      C dw 120
+ 0EA2  0097		      C dw 151
+ 0EA4  00B5		      C dw 181
+ 0EA6  00D4		      C dw 212
+ 0EA8  00F3		      C dw 243
+ 0EAA  0111		      C dw 273
+ 0EAC  0130		      C dw 304
+ 0EAE  014E		      C dw 334
+			      C ;dw 365
+			      C 
+ 0EB0  00		      C db 0
+			      C 
+ 0EB1 00		      C Error:	db 0 ; Hardware error
+ 0EB2  00		      C 	db 0 ; Software error	  
+			      C 
+ 0EB3 00		      C smod:	db 0
+ 0EB4 00		      C imod:	db 0
+			      C 
+ 0EB5 0000		      C ii:	dw 0
+			      C 
+ 0EB7			      C dotodot:
+ 0EB7  3030		      C dw 3030h
+ 0EB9  68		      C db "h"
+ 0EBA  0D 0A 00		      C db 0Dh, 0Ah, 0
+			      C 
+				;;;;;   
+
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+				;  messages
+				;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ 0EBD				UNIX_Welcome:
+ 0EBD  0D 0A					db 0Dh, 0Ah
+ 0EBF  52 45 54 52 4F 20			db 'RETRO UNIX 1.44 MB Floppy Disk (RUFS) Format Utility'
+       55 4E 49 58 20 31
+       2E 34 34 20 4D 42
+       20 46 6C 6F 70 70
+       79 20 44 69 73 6B
+       20 28 52 55 46 53
+       29 20 46 6F 72 6D
+       61 74 20 55 74 69
+       6C 69 74 79
+ 0EF3  0D 0A					db 0Dh, 0Ah
+ 0EF5  55 4E 49 58 46 44			db 'UNIXFDFS by Erdogan TAN 2015 - [04/04/2022]'
+       46 53 20 62 79 20
+       45 72 64 6F 67 61
+       6E 20 54 41 4E 20
+       32 30 31 35 20 2D
+       20 5B 30 34 2F 30
+       34 2F 32 30 32 32
+       5D
+ 0F20  0D 0A					db 0Dh,0Ah
+ 0F22  0D 0A					db 0Dh,0Ah
+ 0F24  55 73 61 67 65 3A			db 'Usage: unixfdfs [Drive] '
+       20 75 6E 69 78 66
+       64 66 73 20 5B 44
+       72 69 76 65 5D 20
+ 0F3C  0D 0A					db 0Dh,0Ah
+ 0F3E  0D 0A					db 0Dh,0Ah
+ 0F40  44 72 69 76 65 20			db "Drive names:"
+       6E 61 6D 65 73 3A
+ 0F4C  0D 0A					db 0Dh,0Ah
+ 0F4E  0D 0A					db 0Dh,0Ah
+ 0F50  66 64 30 20 20 20			db "fd0    (Floppy Disk 1)", 0Dh, 0Ah
+       20 28 46 6C 6F 70
+       70 79 20 44 69 73
+       6B 20 31 29 0D 0A
+ 0F68  66 64 31 20 20 20			db "fd1    (Floppy Disk 2)", 0Dh, 0Ah
+       20 28 46 6C 6F 70
+       70 79 20 44 69 73
+       6B 20 32 29 0D 0A
+ 0F80  2E 2E 2E 0D 0A				db "...", 0Dh, 0Ah
+ 0F85  41 3A 20 20 20 20			db "A:     (Floppy Disk 1)", 0Dh, 0Ah
+       20 28 46 6C 6F 70
+       70 79 20 44 69 73
+       6B 20 31 29 0D 0A
+ 0F9D  42 3A 20 20 20 20			db "B:     (Floppy Disk 2)", 0Dh, 0Ah
+       20 28 46 6C 6F 70
+       70 79 20 44 69 73
+       6B 20 32 29 0D 0A
+ 0FB5  0D 0A					db 0Dh, 0Ah
+ 0FB7  00					db 0
+
+ 0FB8				Msg_DoYouWantToFormat:
+ 0FB8  07					db 07h
+ 0FB9  0D 0A					db 0Dh, 0Ah
+ 0FBB  57 41 52 4E 49 4E			db 'WARNING!'
+       47 21
+ 0FC3  0D 0A					db 0Dh, 0Ah
+ 0FC5  41 6C 6C 20 64 61			db 'All data on the drive will be erased.'
+       74 61 20 6F 6E 20
+       74 68 65 20 64 72
+       69 76 65 20 77 69
+       6C 6C 20 62 65 20
+       65 72 61 73 65 64
+       2E
+ 0FEA  0D 0A					db 0Dh, 0Ah
+ 0FEC  0D 0A					db 0Dh, 0Ah
+ 0FEE  44 6F 20 79 6F 75			db 'Do you want to format drive '
+       20 77 61 6E 74 20
+       74 6F 20 66 6F 72
+       6D 61 74 20 64 72
+       69 76 65 20
+ 100A				RUFS_DRIVE:
+ 100A  41 3A 20 28 59 65			db 'A: (Yes/No)? ', 0
+       73 2F 4E 6F 29 3F
+       20 00
+
+ 1018				Msg_Installing_File_System:
+ 1018  0D 0A					db 0Dh, 0Ah
+						;db "Installing UNIX v1.1 File Sytem...", 0
+						; 04/04/2022
+ 101A  49 6E 73 74 61 6C			db "Installing Retro UNIX v1.1 File Sytem...", 0
+       6C 69 6E 67 20 52
+       65 74 72 6F 20 55
+       4E 49 58 20 76 31
+       2E 31 20 46 69 6C
+       65 20 53 79 74 65
+       6D 2E 2E 2E 00
+
+ 1043				Msg_Writing_Boot_Sector:
+ 1043  0D 0A					db 0Dh, 0Ah
+						;db "Writing UNIX boot sector...", 0
+						; 04/04/2022
+ 1045  57 72 69 74 69 6E			db "Writing Retro UNIX boot sector...", 0
+       67 20 52 65 74 72
+       6F 20 55 4E 49 58
+       20 62 6F 6F 74 20
+       73 65 63 74 6F 72
+       2E 2E 2E 00
+
+ 1067 0000			Cursor_Pos:     dw 0
+
+ 1069				Msg_Volume_Name:
+ 1069  0D 0A					db 0Dh, 0Ah
+ 106B  56 6F 6C 75 6D 65			db "Volume Name: ", 0
+       20 4E 61 6D 65 3A
+       20 00
+ 1079				Msg_OK:
+ 1079  20 4F 4B 2E 00				db ' OK.', 0
+
+ 107E 20 59 45 53		msg_YES:        db ' YES'
+ 1082  00					db 0
+ 1083 20 4E 4F			msg_NO:         db ' NO'
+ 1086  00					db 0   
+
+				; 12/8/2012
+ 1087				msg_disk_rw_error:
+ 1087  0D 0A					db 0Dh, 0Ah
+ 1089  44 69 73 6B 20 72			db 'Disk r/w error!'
+       2F 77 20 65 72 72
+       6F 72 21
+ 1098  00					db 0
+
+ 1099				msg_error_Number:
+ 1099  0D 0A					db 0Dh, 0Ah
+ 109B  45 72 72 6F 72 20			db 'Error No:'
+       4E 6F 3A
+ 10A4 3030			str_err:        dw 3030h
+ 10A6  68					db 'h'
+ 10A7				UNIX_CRLF:
+ 10A7  0D 0A 00					db 0Dh, 0Ah, 0
+
+ 10AA 00			Error_Code:     db 0
+
+ 10AB 0000			RetryCount:     dw 0
+
+ 10AD  000F [			str_volume_name: db 15 dup (0)
+        00
+       ]
+
+ 10BC  54 75 72 6B 69 73			db  'Turkish Rational UNIX', 0
+       68 20 52 61 74 69
+       6F 6E 61 6C 20 55
+       4E 49 58 00
+ 10D2  52 45 54 52 4F 20			db  'RETRO UNIX 386 v1.1 by Erdogan TAN', 0
+       55 4E 49 58 20 33
+       38 36 20 76 31 2E
+       31 20 62 79 20 45
+       72 64 6F 67 61 6E
+       20 54 41 4E 00
+ 10F5  31 31 2F 30 37 2F			db  '11/07/2012', 0, '04/04/2022', 0 
+       32 30 31 32 00 30
+       34 2F 30 34 2F 32
+       30 32 32 00
+
+				even
+ 110C				boot_sector:
+				; 09/01/2020 - Boot Sector (bsDriveNumber, DL) BugFix
+				; Retro UNIX 8086 v1 (+ 386 v1) Boot Sector Image
+				;include	rufsbs.txt ; rufsbs.bin (bin2db) file
+				;
+				; 04/04/2022 (new boot sector, inode table address modif.)
+				include		rufsbs1.txt ; rufsbs1.bin (bin2db) file
+			      C ; Retro UNIX 8086 v1
+			      C ; Retro UNIX 386 v1
+			      C ; Retro UNIX 386 v1.1
+			      C ;	Boot Sector code for 1.44 MB floppy disks 
+			      C ; 04/12/2015
+			      C ; 09/01/2020 (BugFix)
+			      C ; 04/04/2022 (Inode Table Start Address Modification)
+			      C 
+ 110C  EB 13 52 55 46 53      C db 00EBh, 013h, 052h, 055h, 046h, 053h, 000h, 000h, 000h, 000h, 066h, 064h, 000h, 000h, 012h, 002h
+       00 00 00 00 66 64
+       00 00 12 02
+ 111C  50 00 00 00 40 8C      C db 0050h, 000h, 000h, 000h, 040h, 08Ch, 0C8h, 08Eh, 0D8h, 08Eh, 0C0h, 0FAh, 08Eh, 0D0h, 0BCh, 0FEh
+       C8 8E D8 8E C0 FA
+       8E D0 BC FE
+ 112C  FF FB A1 12 7C 0B      C db 00FFh, 0FBh, 0A1h, 012h, 07Ch, 00Bh, 0C0h, 075h, 003h, 0E9h, 00Eh, 001h, 088h, 016h, 00Ch, 07Ch
+       C0 75 03 E9 0E 01
+       88 16 0C 7C
+ 113C  83 C0 1F 50 D1 E8      C db 0083h, 0C0h, 01Fh, 050h, 0D1h, 0E8h, 0D1h, 0E8h, 0D1h, 0E8h, 0D1h, 0E8h, 0E8h, 00Fh, 001h, 05Ah
+       D1 E8 D1 E8 D1 E8
+       E8 0F 01 5A
+ 114C  73 03 E9 01 01 83      C db 0073h, 003h, 0E9h, 001h, 001h, 083h, 0E2h, 00Fh, 0D1h, 0E2h, 0D1h, 0E2h, 0D1h, 0E2h, 0D1h, 0E2h
+       E2 0F D1 E2 D1 E2
+       D1 E2 D1 E2
+ 115C  D1 E2 BF 00 06 B9      C db 00D1h, 0E2h, 0BFh, 000h, 006h, 0B9h, 010h, 000h, 08Bh, 0F3h, 003h, 0F2h, 0F3h, 0A5h, 0BBh, 000h
+       10 00 8B F3 03 F2
+       F3 A5 BB 00
+ 116C  06 F6 07 10 75 03      C db 0006h, 0F6h, 007h, 010h, 075h, 003h, 0E9h, 0DDh, 000h, 0BBh, 004h, 006h, 08Bh, 007h, 023h, 0C0h
+       E9 DD 00 BB 04 06
+       8B 07 23 C0
+ 117C  75 03 E9 D1 00 C7      C db 0075h, 003h, 0E9h, 0D1h, 000h, 0C7h, 006h, 0BDh, 07Dh, 000h, 07Eh, 033h, 0D2h, 089h, 016h, 0BFh
+       06 BD 7D 00 7E 33
+       D2 89 16 BF
+ 118C  7D A3 C1 7D 89 16      C db 007Dh, 0A3h, 0C1h, 07Dh, 089h, 016h, 0C3h, 07Dh, 08Bh, 017h, 02Bh, 016h, 0BFh, 07Dh, 077h, 003h
+       C3 7D 8B 17 2B 16
+       BF 7D 77 03
+ 119C  E9 84 00 3B 16 C1      C db 00E9h, 084h, 000h, 03Bh, 016h, 0C1h, 07Dh, 073h, 004h, 089h, 016h, 0C1h, 07Dh, 08Ah, 01Eh, 0C0h
+       7D 73 04 89 16 C1
+       7D 8A 1E C0
+ 11AC  7D 32 FF BE 01 06      C db 007Dh, 032h, 0FFh, 0BEh, 001h, 006h, 0F6h, 004h, 010h, 075h, 00Eh, 0F6h, 0C3h, 0F0h, 075h, 024h
+       F6 04 10 75 0E F6
+       C3 F0 75 24
+ 11BC  80 E3 0E 8B 87 06      C db 0080h, 0E3h, 00Eh, 08Bh, 087h, 006h, 006h, 0EBh, 017h, 080h, 0E3h, 0FEh, 08Bh, 0F3h, 0BBh, 006h
+       06 EB 17 80 E3 FE
+       8B F3 BB 06
+ 11CC  06 8B 07 0B C0 74      C db 0006h, 08Bh, 007h, 00Bh, 0C0h, 074h, 07Fh, 0E8h, 084h, 000h, 072h, 07Ah, 003h, 0DEh, 08Bh, 007h
+       7F E8 84 00 72 7A
+       03 DE 8B 07
+ 11DC  0B C0 74 72 E8 77      C db 000Bh, 0C0h, 074h, 072h, 0E8h, 077h, 000h, 072h, 06Dh, 08Bh, 036h, 0BFh, 07Dh, 08Bh, 0CEh, 080h
+       00 72 6D 8B 36 BF
+       7D 8B CE 80
+ 11EC  CD FE 81 E6 FF 01      C db 00CDh, 0FEh, 081h, 0E6h, 0FFh, 001h, 003h, 0F3h, 08Bh, 03Eh, 0BDh, 07Dh, 0F7h, 0D9h, 03Bh, 00Eh
+       03 F3 8B 3E BD 7D
+       F7 D9 3B 0E
+ 11FC  C1 7D 76 04 8B 0E      C db 00C1h, 07Dh, 076h, 004h, 08Bh, 00Eh, 0C1h, 07Dh, 001h, 00Eh, 0C3h, 07Dh, 029h, 00Eh, 0C1h, 07Dh
+       C1 7D 01 0E C3 7D
+       29 0E C1 7D
+ 120C  01 0E BD 7D 01 0E      C db 0001h, 00Eh, 0BDh, 07Dh, 001h, 00Eh, 0BFh, 07Dh, 0F3h, 0A4h, 083h, 03Eh, 0C1h, 07Dh, 000h, 076h
+       BF 7D F3 A4 83 3E
+       C1 7D 00 76
+ 121C  06 BB 04 06 E9 71      C db 0006h, 0BBh, 004h, 006h, 0E9h, 071h, 0FFh, 08Bh, 00Eh, 0C3h, 07Dh, 0BBh, 004h, 006h, 0BEh, 09Ch
+       FF 8B 0E C3 7D BB
+       04 06 BE 9C
+ 122C  7D E8 52 00 8A 16      C db 007Dh, 0E8h, 052h, 000h, 08Ah, 016h, 00Ch, 07Ch, 0B8h, 0E0h, 007h, 08Eh, 0D8h, 08Eh, 0C0h, 0FAh
+       0C 7C B8 E0 07 8E
+       D8 8E C0 FA
+ 123C  8E D0 FB EA 00 00      C db 008Eh, 0D0h, 0FBh, 0EAh, 000h, 000h, 0E0h, 007h, 0EBh, 0FEh, 0BEh, 09Fh, 07Dh, 0E8h, 036h, 000h
+       E0 07 EB FE BE 9F
+       7D E8 36 00
+ 124C  33 C0 CD 16 CD 19      C db 0033h, 0C0h, 0CDh, 016h, 0CDh, 019h, 0BEh, 085h, 07Dh, 0E8h, 02Ah, 000h, 0EBh, 0EAh, 0BBh, 000h
+       BE 85 7D E8 2A 00
+       EB EA BB 00
+ 125C  07 32 ED B1 04 51      C db 0007h, 032h, 0EDh, 0B1h, 004h, 051h, 0BAh, 012h, 000h, 0F6h, 0F2h, 08Ah, 0CCh, 0FEh, 0C1h, 0D0h
+       BA 12 00 F6 F2 8A
+       CC FE C1 D0
+ 126C  E8 80 D6 00 8A 16      C db 00E8h, 080h, 0D6h, 000h, 08Ah, 016h, 00Ch, 07Ch, 08Ah, 0E8h, 0B4h, 002h, 0B0h, 001h, 0CDh, 013h
+       0C 7C 8A E8 B4 02
+       B0 01 CD 13
+ 127C  59 73 02 E2 E0 C3      C db 0059h, 073h, 002h, 0E2h, 0E0h, 0C3h, 0BBh, 007h, 000h, 0B4h, 00Eh, 0ACh, 022h, 0C0h, 074h, 004h
+       BB 07 00 B4 0E AC
+       22 C0 74 04
+ 128C  CD 10 EB F7 C3 07      C db 00CDh, 010h, 0EBh, 0F7h, 0C3h, 007h, 052h, 065h, 074h, 072h, 06Fh, 020h, 055h, 04Eh, 049h, 058h
+       52 65 74 72 6F 20
+       55 4E 49 58
+ 129C  20 62 6F 6F 74 20      C db 0020h, 062h, 06Fh, 06Fh, 074h, 020h, 065h, 072h, 072h, 06Fh, 072h, 021h, 00Dh, 00Ah, 000h, 007h
+       65 72 72 6F 72 21
+       0D 0A 00 07
+ 12AC  4E 6F 74 20 61 20      C db 004Eh, 06Fh, 074h, 020h, 061h, 020h, 062h, 06Fh, 06Fh, 074h, 061h, 062h, 06Ch, 065h, 020h, 066h
+       62 6F 6F 74 61 62
+       6C 65 20 66
+ 12BC  6C 6F 70 70 79 20      C db 006Ch, 06Fh, 070h, 070h, 079h, 020h, 064h, 069h, 073h, 06Bh, 021h, 00Dh, 00Ah, 000h, 000h, 000h
+       64 69 73 6B 21 0D
+       0A 00 00 00
+ 12CC  00 00 00 00 00 00      C db 0000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h
+       00 00 00 00 00 00
+       00 00 00 00
+ 12DC  00 00 00 00 00 00      C db 0000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h
+       00 00 00 00 00 00
+       00 00 00 00
+ 12EC  00 00 00 00 00 00      C db 0000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h
+       00 00 00 00 00 00
+       00 00 00 00
+ 12FC  00 00 00 00 00 00      C db 0000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 000h, 055h, 0AAh
+       00 00 00 00 00 00
+       00 00 55 AA
+			      C 
+
+ 130C				RUFS_INSTL      ends
+
+						end  INSTALL
+Microsoft (R) Macro Assembler Version 6.14.8444		    04/04/22 20:00:09
+unixfdfs.asm						     Symbols 2 - 1
+
+
+
+
+Structures and Unions:
+
+                N a m e                  Size
+                                         Offset      Type
+
+SuperBlock . . . . . . . . . . .	 0400
+  sb_FreeMapSize . . . . . . . .	 0000	     Word
+  sb_FreeMap . . . . . . . . . .	 0002	     Byte
+  sb_InodeMapSize  . . . . . . .	 016A	     Word
+  sb_InodeMap  . . . . . . . . .	 016C	     Byte
+  sb_Reserved1 . . . . . . . . .	 018C	     Byte
+  sb_Reserved2 . . . . . . . . .	 0200	     Byte
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+RUFS_INSTL . . . . . . . . . . .	16 Bit	 130C	  Para	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+PRINT_MSG  . . . . . . . . . . .	P Near	 020E	  RUFS_INSTL	Length= 000F Private
+alloc  . . . . . . . . . . . . .	P Near	 0CC7	  RUFS_INSTL	Length= 003D Private
+clear  . . . . . . . . . . . . .	P Near	 0D32	  RUFS_INSTL	Length= 001C Private
+dskrd  . . . . . . . . . . . . .	P Near	 0AC5	  RUFS_INSTL	Length= 0024 Private
+dskwr  . . . . . . . . . . . . .	P Near	 0AE9	  RUFS_INSTL	Length= 0009 Private
+dskw . . . . . . . . . . . . . .	P Near	 0BA8	  RUFS_INSTL	Length= 006A Private
+epoch  . . . . . . . . . . . . .	P Near	 0D85	  RUFS_INSTL	Length= 00F3 Private
+fd_rw_sector . . . . . . . . . .	P Near	 0B10	  RUFS_INSTL	Length= 003E Private
+free . . . . . . . . . . . . . .	P Near	 0D04	  RUFS_INSTL	Length= 002E Private
+icalc  . . . . . . . . . . . . .	P Near	 0A85	  RUFS_INSTL	Length= 0040 Private
+iget . . . . . . . . . . . . . .	P Near	 0A50	  RUFS_INSTL	Length= 0035 Private
+imap . . . . . . . . . . . . . .	P Near	 0B77	  RUFS_INSTL	Length= 0020 Private
+mget . . . . . . . . . . . . . .	P Near	 0C12	  RUFS_INSTL	Length= 00B5 Private
+poke . . . . . . . . . . . . . .	P Near	 0AF2	  RUFS_INSTL	Length= 001E Private
+proc_hex . . . . . . . . . . . .	P Near	 021D	  RUFS_INSTL	Length= 0016 Private
+proc_mul32 . . . . . . . . . . .	P Near	 0E78	  RUFS_INSTL	Length= 0014 Private
+rufs_fd_format . . . . . . . . .	P Near	 0000	  RUFS_INSTL	Length= 020E Private
+setimod  . . . . . . . . . . . .	P Near	 0B4E	  RUFS_INSTL	Length= 0029 Private
+sioreg . . . . . . . . . . . . .	P Near	 0D4E	  RUFS_INSTL	Length= 0037 Private
+sync . . . . . . . . . . . . . .	P Near	 02C7	  RUFS_INSTL	Length= 002C Private
+unix_fs_install  . . . . . . . .	P Near	 0233	  RUFS_INSTL	Length= 0094 Private
+writei . . . . . . . . . . . . .	P Near	 0B97	  RUFS_INSTL	Length= 0011 Private
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+Buffer . . . . . . . . . . . . .	L Near	 0850	  RUFS_INSTL	
+Cursor_Pos . . . . . . . . . . .	L Near	 1067	  RUFS_INSTL	
+DISK_SIZE  . . . . . . . . . . .	Number	 0B40h	 
+DMonth . . . . . . . . . . . . .	L Near	 0E98	  RUFS_INSTL	
+Error_Code . . . . . . . . . . .	L Near	 10AA	  RUFS_INSTL	
+Error  . . . . . . . . . . . . .	L Near	 0EB1	  RUFS_INSTL	
+INODE_COUNT  . . . . . . . . . .	Number	 0128h	 
+INODE_LIST_BLOCKS  . . . . . . .	Number	 0013h	 
+INSTALL  . . . . . . . . . . . .	L Near	 0100	  RUFS_INSTL	
+Msg_DoYouWantToFormat  . . . . .	L Near	 0FB8	  RUFS_INSTL	
+Msg_Installing_File_System . . .	L Near	 1018	  RUFS_INSTL	
+Msg_OK . . . . . . . . . . . . .	L Near	 1079	  RUFS_INSTL	
+Msg_Volume_Name  . . . . . . . .	L Near	 1069	  RUFS_INSTL	
+Msg_Writing_Boot_Sector  . . . .	L Near	 1043	  RUFS_INSTL	
+PRINT_MSG_LOOP . . . . . . . . .	L Near	 0213	  RUFS_INSTL	
+PRINT_MSG_OK . . . . . . . . . .	L Near	 021C	  RUFS_INSTL	
+ROOT_DIR_INODE . . . . . . . . .	Number	 0029h	 
+RUFS_DRIVE . . . . . . . . . . .	L Near	 100A	  RUFS_INSTL	
+RetryCount . . . . . . . . . . .	L Near	 10AB	  RUFS_INSTL	
+SIZE_FREE_MAP  . . . . . . . . .	Number	 0168h	 
+SIZE_INODE_MAP . . . . . . . . .	Number	 0020h	 
+SIZE_Reserved1 . . . . . . . . .	Number	 0074h	 
+UNIX_CRLF  . . . . . . . . . . .	L Near	 10A7	  RUFS_INSTL	
+UNIX_Welcome . . . . . . . . . .	L Near	 0EBD	  RUFS_INSTL	
+alloc_1  . . . . . . . . . . . .	L Near	 0CCD	  RUFS_INSTL	
+alloc_2  . . . . . . . . . . . .	L Near	 0CD9	  RUFS_INSTL	
+alloc_3  . . . . . . . . . . . .	L Near	 0CED	  RUFS_INSTL	
+alloc_4  . . . . . . . . . . . .	L Near	 0CF4	  RUFS_INSTL	
+alloc_5  . . . . . . . . . . . .	L Near	 0CF7	  RUFS_INSTL	
+alloc_6  . . . . . . . . . . . .	L Near	 0CFB	  RUFS_INSTL	
+alloc_7  . . . . . . . . . . . .	L Near	 0D00	  RUFS_INSTL	
+bin_dir  . . . . . . . . . . . .	L Near	 06E0	  RUFS_INSTL	
+bin_inode  . . . . . . . . . . .	L Near	 07CA	  RUFS_INSTL	
+boot_sector  . . . . . . . . . .	L Near	 110C	  RUFS_INSTL	
+bsDriveNumber  . . . . . . . . .	Number	 000Ch	 
+bsFSystemID  . . . . . . . . . .	Number	 0002h	 
+bsHeads  . . . . . . . . . . . .	Number	 000Fh	 
+bsReserved . . . . . . . . . . .	Number	 000Dh	 
+bsSecPerTrack  . . . . . . . . .	Number	 000Eh	 
+bsTracks . . . . . . . . . . . .	Number	 0010h	 
+bsVolumeSerial . . . . . . . . .	Number	 0006h	 
+bs_BF_I_number . . . . . . . . .	Number	 0012h	 
+buff_d . . . . . . . . . . . . .	L Near	 02F4	  RUFS_INSTL	
+buff_m . . . . . . . . . . . . .	L Near	 02F7	  RUFS_INSTL	
+buff_s . . . . . . . . . . . . .	L Near	 02F5	  RUFS_INSTL	
+buff_w . . . . . . . . . . . . .	L Near	 02F8	  RUFS_INSTL	
+convert_to_epoch . . . . . . . .	L Near	 0DF6	  RUFS_INSTL	
+day  . . . . . . . . . . . . . .	L Near	 0E90	  RUFS_INSTL	
+dev_dir  . . . . . . . . . . . .	L Near	 0570	  RUFS_INSTL	
+dev_inode  . . . . . . . . . . .	L Near	 07AA	  RUFS_INSTL	
+dirs . . . . . . . . . . . . . .	L Near	 0500	  RUFS_INSTL	
+dotodot  . . . . . . . . . . . .	L Near	 0EB7	  RUFS_INSTL	
+dskrd_1  . . . . . . . . . . . .	L Near	 0ACB	  RUFS_INSTL	
+dskrd_3  . . . . . . . . . . . .	L Near	 0ADC	  RUFS_INSTL	
+dskrd_4  . . . . . . . . . . . .	L Near	 0AE8	  RUFS_INSTL	
+dskw_0 . . . . . . . . . . . . .	L Near	 0BA8	  RUFS_INSTL	
+dskw_1 . . . . . . . . . . . . .	L Near	 0BC7	  RUFS_INSTL	
+dskw_2 . . . . . . . . . . . . .	L Near	 0BE0	  RUFS_INSTL	
+dskw_3 . . . . . . . . . . . . .	L Near	 0BE7	  RUFS_INSTL	
+dskw_4 . . . . . . . . . . . . .	L Near	 0BEA	  RUFS_INSTL	
+dskw_5 . . . . . . . . . . . . .	L Near	 0BFD	  RUFS_INSTL	
+dskw_6 . . . . . . . . . . . . .	L Near	 0C01	  RUFS_INSTL	
+dskwr_1  . . . . . . . . . . . .	L Near	 0AE9	  RUFS_INSTL	
+err_INVALIDDATA  . . . . . . . .	Number	 0100h	 
+err_NOFREEBLOCK  . . . . . . . .	Number	 0200h	 
+etc_dir  . . . . . . . . . . . .	L Near	 0700	  RUFS_INSTL	
+etc_inode  . . . . . . . . . . .	L Near	 07EA	  RUFS_INSTL	
+fd_rw_sector_1 . . . . . . . . .	L Near	 0B1D	  RUFS_INSTL	
+fd_rw_sector_2 . . . . . . . . .	L Near	 0B49	  RUFS_INSTL	
+free_1 . . . . . . . . . . . . .	L Near	 0D0C	  RUFS_INSTL	
+free_2 . . . . . . . . . . . . .	L Near	 0D14	  RUFS_INSTL	
+free_3 . . . . . . . . . . . . .	L Near	 0D15	  RUFS_INSTL	
+free_4 . . . . . . . . . . . . .	L Near	 0D2B	  RUFS_INSTL	
+hour . . . . . . . . . . . . . .	L Near	 0E92	  RUFS_INSTL	
+i_ctim . . . . . . . . . . . . .	L Near	 0780	  RUFS_INSTL	
+i_dskp . . . . . . . . . . . . .	L Near	 0770	  RUFS_INSTL	
+i_flgs . . . . . . . . . . . . .	L Near	 076A	  RUFS_INSTL	
+i_mtim . . . . . . . . . . . . .	L Near	 0784	  RUFS_INSTL	
+i_nlks . . . . . . . . . . . . .	L Near	 076C	  RUFS_INSTL	
+i_reserved . . . . . . . . . . .	L Near	 0788	  RUFS_INSTL	
+i_size . . . . . . . . . . . . .	L Near	 076E	  RUFS_INSTL	
+i_uid  . . . . . . . . . . . . .	L Near	 076D	  RUFS_INSTL	
+icalc_1  . . . . . . . . . . . .	L Near	 0A97	  RUFS_INSTL	
+icalc_2  . . . . . . . . . . . .	L Near	 0AB6	  RUFS_INSTL	
+icalc_3  . . . . . . . . . . . .	L Near	 0ABD	  RUFS_INSTL	
+icalc_4  . . . . . . . . . . . .	L Near	 0AC1	  RUFS_INSTL	
+icalc_5  . . . . . . . . . . . .	L Near	 0AC4	  RUFS_INSTL	
+idata  . . . . . . . . . . . . .	L Near	 078A	  RUFS_INSTL	
+iget_1 . . . . . . . . . . . . .	L Near	 0A56	  RUFS_INSTL	
+iget_2 . . . . . . . . . . . . .	L Near	 0A74	  RUFS_INSTL	
+iget_3 . . . . . . . . . . . . .	L Near	 0A7F	  RUFS_INSTL	
+iget_4 . . . . . . . . . . . . .	L Near	 0A83	  RUFS_INSTL	
+iget_5 . . . . . . . . . . . . .	L Near	 0A84	  RUFS_INSTL	
+ii . . . . . . . . . . . . . . .	L Near	 0EB5	  RUFS_INSTL	
+imod . . . . . . . . . . . . . .	L Near	 0EB4	  RUFS_INSTL	
+infinive_loop  . . . . . . . . .	L Near	 0192	  RUFS_INSTL	
+inodes . . . . . . . . . . . . .	L Near	 078A	  RUFS_INSTL	
+inode  . . . . . . . . . . . . .	L Near	 076A	  RUFS_INSTL	
+mget_0 . . . . . . . . . . . . .	L Near	 0C12	  RUFS_INSTL	
+mget_1 . . . . . . . . . . . . .	L Near	 0C43	  RUFS_INSTL	
+mget_2 . . . . . . . . . . . . .	L Near	 0C44	  RUFS_INSTL	
+mget_3 . . . . . . . . . . . . .	L Near	 0C5A	  RUFS_INSTL	
+mget_4 . . . . . . . . . . . . .	L Near	 0C62	  RUFS_INSTL	
+mget_5 . . . . . . . . . . . . .	L Near	 0C87	  RUFS_INSTL	
+mget_6 . . . . . . . . . . . . .	L Near	 0CA0	  RUFS_INSTL	
+mget_7 . . . . . . . . . . . . .	L Near	 0CC6	  RUFS_INSTL	
+mget_8 . . . . . . . . . . . . .	L Near	 0C80	  RUFS_INSTL	
+mget_9 . . . . . . . . . . . . .	L Near	 0C7F	  RUFS_INSTL	
+minute . . . . . . . . . . . . .	L Near	 0E94	  RUFS_INSTL	
+month  . . . . . . . . . . . . .	L Near	 0E8E	  RUFS_INSTL	
+msg_NO . . . . . . . . . . . . .	L Near	 1083	  RUFS_INSTL	
+msg_YES  . . . . . . . . . . . .	L Near	 107E	  RUFS_INSTL	
+msg_disk_rw_error  . . . . . . .	L Near	 1087	  RUFS_INSTL	
+msg_error_Number . . . . . . . .	L Near	 1099	  RUFS_INSTL	
+pass_cc_ah . . . . . . . . . . .	L Near	 0232	  RUFS_INSTL	
+pass_cc_al . . . . . . . . . . .	L Near	 022A	  RUFS_INSTL	
+poke_1 . . . . . . . . . . . . .	L Near	 0B05	  RUFS_INSTL	
+poke_2 . . . . . . . . . . . . .	L Near	 0B0F	  RUFS_INSTL	
+root_dir . . . . . . . . . . . .	L Near	 0500	  RUFS_INSTL	
+root_inode . . . . . . . . . . .	L Near	 078A	  RUFS_INSTL	
+rufs_fd_format_10  . . . . . . .	L Near	 019C	  RUFS_INSTL	
+rufs_fd_format_11  . . . . . . .	L Near	 01A2	  RUFS_INSTL	
+rufs_fd_format_12  . . . . . . .	L Near	 01AE	  RUFS_INSTL	
+rufs_fd_format_13  . . . . . . .	L Near	 01C1	  RUFS_INSTL	
+rufs_fd_format_14  . . . . . . .	L Near	 01D9	  RUFS_INSTL	
+rufs_fd_format_15  . . . . . . .	L Near	 01DF	  RUFS_INSTL	
+rufs_fd_format_16  . . . . . . .	L Near	 01EA	  RUFS_INSTL	
+rufs_fd_format_17  . . . . . . .	L Near	 0205	  RUFS_INSTL	
+rufs_fd_format_1 . . . . . . . .	L Near	 0109	  RUFS_INSTL	
+rufs_fd_format_2 . . . . . . . .	L Near	 0116	  RUFS_INSTL	
+rufs_fd_format_3 . . . . . . . .	L Near	 0138	  RUFS_INSTL	
+rufs_fd_format_4 . . . . . . . .	L Near	 014A	  RUFS_INSTL	
+rufs_fd_format_5 . . . . . . . .	L Near	 014F	  RUFS_INSTL	
+rufs_fd_format_6 . . . . . . . .	L Near	 016E	  RUFS_INSTL	
+rufs_fd_format_7 . . . . . . . .	L Near	 0184	  RUFS_INSTL	
+rufs_fd_format_8 . . . . . . . .	L Near	 018A	  RUFS_INSTL	
+rufs_fd_format_9 . . . . . . . .	L Near	 0194	  RUFS_INSTL	
+second . . . . . . . . . . . . .	L Near	 0E96	  RUFS_INSTL	
+sector_buffer  . . . . . . . . .	L Near	 0850	  RUFS_INSTL	
+size_bin_dir . . . . . . . . . .	Number	 0020h	 
+size_dev_dir . . . . . . . . . .	Number	 0170h	 
+size_etc_dir . . . . . . . . . .	Number	 0020h	 
+size_root_dir  . . . . . . . . .	Number	 0070h	 
+size_tmp_dir . . . . . . . . . .	Number	 0020h	 
+size_usr_dir . . . . . . . . . .	Number	 0020h	 
+smod . . . . . . . . . . . . . .	L Near	 0EB3	  RUFS_INSTL	
+str_err  . . . . . . . . . . . .	L Near	 10A4	  RUFS_INSTL	
+str_volume_name  . . . . . . . .	L Near	 10AD	  RUFS_INSTL	
+sync_1 . . . . . . . . . . . . .	L Near	 02D6	  RUFS_INSTL	
+sync_2 . . . . . . . . . . . . .	L Near	 02EF	  RUFS_INSTL	
+sync_3 . . . . . . . . . . . . .	L Near	 02F2	  RUFS_INSTL	
+systm  . . . . . . . . . . . . .	L Near	 0300	  RUFS_INSTL	
+tmp_dir  . . . . . . . . . . . .	L Near	 0740	  RUFS_INSTL	
+tmp_inode  . . . . . . . . . . .	L Near	 082A	  RUFS_INSTL	
+u_base . . . . . . . . . . . . .	L Near	 0764	  RUFS_INSTL	
+u_count  . . . . . . . . . . . .	L Near	 0762	  RUFS_INSTL	
+u_fofp . . . . . . . . . . . . .	L Near	 0766	  RUFS_INSTL	
+u_nread  . . . . . . . . . . . .	L Near	 0768	  RUFS_INSTL	
+u_off  . . . . . . . . . . . . .	L Near	 0760	  RUFS_INSTL	
+uinstall_10  . . . . . . . . . .	L Near	 02C6	  RUFS_INSTL	
+uinstall_1 . . . . . . . . . . .	L Near	 0246	  RUFS_INSTL	
+uinstall_2 . . . . . . . . . . .	L Near	 024F	  RUFS_INSTL	
+uinstall_3 . . . . . . . . . . .	L Near	 0259	  RUFS_INSTL	
+uinstall_4 . . . . . . . . . . .	L Near	 025C	  RUFS_INSTL	
+uinstall_5 . . . . . . . . . . .	L Near	 0277	  RUFS_INSTL	
+uinstall_6 . . . . . . . . . . .	L Near	 0280	  RUFS_INSTL	
+uinstall_7 . . . . . . . . . . .	L Near	 028E	  RUFS_INSTL	
+uinstall_8 . . . . . . . . . . .	L Near	 02C3	  RUFS_INSTL	
+uinstall_9 . . . . . . . . . . .	L Near	 02C3	  RUFS_INSTL	
+usr_dir  . . . . . . . . . . . .	L Near	 0720	  RUFS_INSTL	
+usr_inode  . . . . . . . . . . .	L Near	 080A	  RUFS_INSTL	
+write_1  . . . . . . . . . . . .	L Near	 0BA2	  RUFS_INSTL	
+year . . . . . . . . . . . . . .	L Near	 0E8C	  RUFS_INSTL	
+
+	   0 Warnings
+	   0 Errors

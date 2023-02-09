@@ -1,0 +1,634 @@
+Microsoft (R) Macro Assembler Version 6.14.8444		    04/04/22 19:47:29
+rufsbs1.asm						     Page 1 - 1
+
+
+				; ****************************************************************************
+				; RUFSBS.ASM - Retro UNIX 8086 v1  (+ 386 v1) Boot Sector (04/12/2015) 
+				; ----------------------------------------------------------------------------
+				;
+				; RETRO UNIX 8086 (Retro Unix == Turkish Rational Unix)
+				; Operating System Project (v0.1) by ERDOGAN TAN (Beginning: 11/07/2012) 
+				; 1.44 MB Floppy Disk 
+				; Bootable Unix (RUFS) File System - Boot Sector Code 
+				;
+				; UNIXFDFS.ASM -> include 'RUFSBS.BIN' (04/12/2015)
+				;
+				; Derivation from UNIX Operating System (v1.0 for PDP-11) 
+				; (Original) Source Code by Ken Thompson (1971-1972)
+				; <Bell Laboratories (17/3/1972)>
+				; <Preliminary Release of UNIX Implementation Document>
+				;
+				; ****************************************************************************
+				; 04/04/2022 - Inode Table Start Address Modification (3->2)
+				;							 -Retro UNIX 386 v1.1-
+				; 09/01/2020 - BugFix
+
+ = 0700				BF_BUFFER equ 700h
+ = 0600				BF_INODE equ 600h
+ = 0600				inode_flgs equ 600h
+ = 0602				inode_nlks equ 602h
+ = 0603				inode_uid equ 603h
+ = 0604				inode_size equ 604h
+ = 0606				inode_dskp equ 606h
+ = 0616				inode_ctim equ 616h
+ = 061A				inode_mtim equ 61Ah
+ = 061E				inode_reserved equ 61Eh
+
+ = 7E00				boot_file_load_address equ 7E00h 
+ = 07E0				boot_file_segment equ 7E0h 
+
+
+ 0000				RUFS_BS		SEGMENT PUBLIC 'CODE'
+						assume cs:RUFS_BS,ds:RUFS_BS,es:RUFS_BS,ss:RUFS_BS
+
+						org 7C00h
+
+				;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+				;±
+				;±              PROCEDURE unixbootsector
+				;±
+				;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+
+ 7C00				unixbootsector  proc near
+
+ 7C00				START:
+ 7C00  EB 13					jmp     short @f
+
+				; RETRO UNIX 8086 FS v0.1 BootSector Identification (Data) Block
+				; 29/10/2012 RUFS 1.44MB FD Boot Sector
+				; 04/04/2022
+
+ 7C02 52 55 46 53		bsFSystemID:    db 'RUFS'
+ 7C06 00000000			bsVolumeSerial: dd 0
+ 7C0A  66 64					db 'fd'
+ 7C0C 00			bsDriveNumber:  db 0
+ 7C0D 00			bsReserved:     db 0  ; 512 bytes per sector
+ 7C0E 12			bsSecPerTrack:  db 18
+ 7C0F 02			bsHeads:        db 2
+ 7C10 0050			bsTracks:       dw 80
+ 7C12 0000			bs_BF_I_number: dw 0
+ 7C14  40					db '@'
+ 7C15				@@:  
+ 7C15  8C C8					mov ax, cs
+ 7C17  8E D8					mov ds, ax
+ 7C19  8E C0					mov es, ax
+
+ 7C1B  FA					cli
+ 7C1C  8E D0					mov ss, ax
+ 7C1E  BC FFFE					mov sp, 0FFFEh
+ 7C21  FB					sti
+
+ 7C22  A1 7C12 R				mov ax, word ptr [bs_BF_I_number]
+
+ 7C25  0B C0					or ax, ax              
+				                ;jz loc_no_bootable_disk
+						; 04/04/2022
+ 7C27  75 03					jnz short @f
+ 7C29  E9 010E					jmp loc_no_bootable_disk
+ 7C2C				@@:   
+ 7C2C  88 16 7C0C R				mov byte ptr [bsDriveNumber], DL ; from INT 19h
+
+						;;call load_boot_file
+						;;jc short loc_unix_bl_error
+ 7C30				load_boot_file:
+						;; 22/12/2013
+						; 28/10/2012
+						; 20/10/2012
+						;
+						; RETRO UNIX v1 FS
+						; Boot sector version
+						;
+						; loads boot file       
+						;
+						; ax = i-number
+ 7C30				load_bf_1:
+ 7C30				i_get:
+						; 04/04/2022
+						;   Inode Table Start Address Modification (47->31)
+						;;22/12/2013
+						; 20/10/2010 (i_i)
+						; 14/10/2012
+						; boot sector version of "iget" procedure
+						; Derived from (original) UNIX v1 source code
+						; PRELIMINARY release of Unix Implementation Document, 
+						; 20/6/1972
+						; input -> AX = inode number
+						; RETRO UNIX v1 FS
+						; boot sector version
+						;; return => if cf=1 error number in [Error] 
+
+						;;cmp ax, word ptr [i_i] ; AX (R1) = i-number of current file
+						;;je short i_get_3
+					
+						;; mov di, ax ; i-number
+						;add ax, 47 ; add 47 to inode number
+						; 04/04/2022
+ 7C30  83 C0 1F					add ax, 31 ; add 31 to inode number
+ 7C33  50					push ax ; 
+ 7C34  D1 E8					shr ax, 1  ; divide by 16
+ 7C36  D1 E8					shr ax, 1
+ 7C38  D1 E8					shr ax, 1
+ 7C3A  D1 E8					shr ax, 1
+							; ax contains block number of block in which
+							; inode exists
+ 7C3C  E8 010F					call dsk_rd
+ 7C3F  5A					pop dx ;
+						;;jc short i_get_3 ; Error code in AH
+				                ;jc loc_unix_bl_error
+						; 04/04/2022
+ 7C40  73 03					jnc short @f
+ 7C42  E9 0101					jmp loc_unix_bl_error	
+ 7C45				@@:
+						;;mov word ptr [i_i], di
+ 7C45				i_get_1:
+ 7C45  83 E2 0F					and dx, 0Fh ; (i+31) mod 16 (2022) ; (i+47) mod 16
+ 7C48  D1 E2					shl dx, 1
+ 7C4A  D1 E2					shl dx, 1
+ 7C4C  D1 E2					shl dx, 1
+ 7C4E  D1 E2					shl dx, 1
+ 7C50  D1 E2					shl dx, 1 
+						  	; DX = 32*((i+31)mod16) ; 32*((i+47)mod16)
+						  	; DX points to first word in i-node i.
+ 7C52  BF 0600					mov di, BF_INODE
+							; inode is address of first word of current inode
+ 7C55  B9 0010					mov cx, 16 ;
+
+ 7C58  8B F3					mov si, bx ; offset Buffer
+
+ 7C5A  03 F2					add si, dx 
+ 7C5C				i_get_2:
+						; copy new i-node into inode area of (core) memory
+ 7C5C  F3/ A5					rep movsw
+				;;i_get_3:
+						;;retn   
+
+ 7C5E				lbf_2:		;; 22/12/2013
+
+ 7C5E  BB 0600					mov bx, inode_flgs
+
+						;test word ptr [bx], 10h ; executable file attribute bit
+ 7C61  F6 07 10					test byte ptr [bx], 10h ; 04/04/2022 
+						;;jz short load_bf_stc 
+				           	;jz loc_unix_bl_error
+						; 04/04/2022
+ 7C64  75 03					jnz short @f
+ 7C66  E9 00DD					jmp loc_unix_bl_error
+ 7C69				@@:
+ 7C69  BB 0604					mov bx, inode_size ; offset
+
+				                ;; 22/12/2013
+				                ;;cmp word ptr [bx], 0
+						;;jna short load_bf_stc   
+				                ;;;jna short loc_unix_bl_error
+ 7C6C  8B 07			                mov ax, word ptr [bx]
+ 7C6E  23 C0			                and ax, ax
+						;jz loc_unix_bl_error
+						; 04/04/2022
+ 7C70  75 03					jnz short @f
+ 7C72  E9 00D1					jmp loc_unix_bl_error	
+ 7C75				@@:        
+ 7C75  C7 06 7DBD R 7E00			mov word ptr [b_base], boot_file_load_address
+
+				                ;;xor ax, ax 
+				                ;;mov word ptr [b_off], ax ; u_off is file offset
+
+				                ;; 22/12/2013
+ 7C7B  33 D2			                xor dx, dx
+ 7C7D  89 16 7DBF R		                mov word ptr [b_off], dx ; u_off is file offset
+
+						;mov bx, inode_size
+				                ;;mov ax, word ptr [bx]
+ 7C81  A3 7DC1 R				mov word ptr [b_count], ax
+					
+						;;mov ax, word ptr [i_i]
+						;;call read_i     
+						;;jc short load_bf_retn
+ 7C84				read_i:
+						;; 22/12/2013
+						; 28/10/2012
+						; 14/10/2012
+						; Boot sector version of "readi" procedure
+						; Derived from (original) UNIX v1 source code
+						; PRELIMINARY release of Unix Implementation Document, 
+						; 20/6/1972
+						;;AX (R1) = i-number 
+						; RETRO UNIX v1 FS
+						; Boot sector version
+						;
+						; read from an i-node
+						;
+				                ;;xor dx, dx ; 0
+ 7C84  89 16 7DC3 R				mov word ptr [b_nread], dx ; accumulated number of bytes transmitted
+				                ;;cmp word ptr [b_count], dx ; is number of byte to read greater than 0
+				                ;;jna short read_i_retn
+
+						; 04/04/2022
+						; bx = inode_size (offset)
+ 7C88				read_i_1:
+						; AX = I-Number
+						;;push ax
+						;;call i_get ; get i-node into i-node section of core
+						; 04/04/2022
+						;mov bx, inode_size
+ 7C88  8B 17					mov dx, word ptr [bx] ; file size in bytes in r2 (DX)
+ 7C8A  2B 16 7DBF R				sub dx, word ptr [b_off] ; subtract file offset
+						;;jna short read_i_3
+				                ;jna read_i_retn ;; 22/12/2013
+						; 04/04/2022
+ 7C8E  77 03					ja short @f
+ 7C90  E9 0084					jmp read_i_retn
+ 7C93				@@:
+ 7C93  3B 16 7DC1 R				cmp dx, word ptr [b_count] 
+								; are enough bytes left in file to carry out read
+ 7C97  73 04					jnb short read_i_2
+ 7C99  89 16 7DC1 R				mov word ptr [b_count], dx
+ 7C9D				read_i_2:
+						;;call m_get  ; returns physical block number of block in file 
+						;;   	    ; where offset points
+ 7C9D				m_get:
+						;; 22/12/2013
+						; 05/03/2013
+						; 03/03/2013
+						; 28/10/2012
+						; 20/10/2012
+						; Boot sector version of "mget" procedure
+						; Derived from (original) UNIX v1 source code
+						; PRELIMINARY release of Unix Implementation Document, 
+						; 20/6/1972
+						;
+ 7C9D				m_get_0:
+ 7C9D  8A 1E 7DC0 R				mov bl, byte ptr [b_off]+1
+ 7CA1  32 FF					xor bh, bh
+
+						;mov si, inode_flgs
+						;test word ptr [si], 4096 ; 1000h
+						;		    ; is this a large or small file
+						;jnz short m_get_1 ; large file
+
+						; 04/04/2022	
+ 7CA3  BE 0601					mov si, inode_flgs+1
+ 7CA6  F6 04 10					test byte ptr [si], 10h ; is this a large or small file ?
+ 7CA9  75 0E					jnz short m_get_1 ; large file
+
+ 7CAB  F6 C3 F0					test bl, 0F0h ; !0Fh  ; error if BX (R2) >= 16                    
+ 7CAE  75 24					jnz short m_get_5
+
+ 7CB0  80 E3 0E					and bl, 0Eh  ; clear all bits but bits 1,2,3
+ 7CB3  8B 87 0606				mov ax, word ptr inode_dskp[bx] ; AX = R1, physical block number
+					
+ 7CB7  EB 17					jmp short m_get_3
+
+ 7CB9				m_get_1: 	; large file
+						; 05/03/2013
+						; 03/03/2013
+						;mov ax, bx
+						;mov cx, 256
+						;xor dx, dx
+						;div cx
+						;and bx, 1FEh  ; zero all bit but 1,2,3,4,5,6,7,8
+						      ; gives offset in indirect block
+						;push bx              ; 
+						;mov bx, ax  ; calculate offset in i-node for pointer
+						    	; to proper indirect block
+						;and bx, 0Eh
+						;mov ax, word ptr inode_dskp[bx]
+ 7CB9  80 E3 FE					and bl, 0FEh
+						;;push bx
+						;;mov di, bx 
+ 7CBC  8B F3					mov si, bx ; 22/12/2013
+ 7CBE  BB 0606					mov bx, inode_dskp
+ 7CC1  8B 07					mov ax, word ptr [BX]
+ 7CC3  0B C0					or ax, ax
+						;;jz short m_get_4
+ 7CC5  74 7F					jz short loc_unix_bl_error ; 22/12/2013
+ 7CC7				m_get_2:
+ 7CC7  E8 0084					call dsk_rd ; read indirect block
+						;;jc short m_get_5
+ 7CCA  72 7A					jc short loc_unix_bl_error ; 22/12/2013
+						;;pop ax
+						;;add bx, ax ; R5, first word of indirect block
+						;;add bx, di
+ 7CCC  03 DE					add bx, si ; 22/12/2013
+ 7CCE  8B 07					mov ax, word ptr [BX] ; put physical block no of block
+							      ; in file sought in R1 (AX)
+ 7CD0				m_get_3: ; 2
+						; ax = R1, block number of new block
+						;;cmp ax, 1
+						;;retn
+ 7CD0  0B C0					or ax, ax
+ 7CD2  74 72					jz short loc_unix_bl_error ; 22/12/2013
+ 7CD4				m_get_4:
+						;;stc
+ 7CD4				m_get_5:
+						;;pop bx
+						;;retn
+						;;;jc short loc_unix_bl_error ; 22/12/2013
+
+						; AX = Physical block number
+ 7CD4  E8 0077					call dsk_rd ; read in block, BX points to 1st word of data in
+						   	    ; buffer
+						;;jc short read_i_3
+						;;jc short_read_i_retn
+ 7CD7  72 6D					jc short loc_unix_bl_error ;; 22/12/2013
+
+ 7CD9				readi_sioreg:
+ 7CD9  8B 36 7DBF R				mov si, word ptr [b_off] ; R2
+ 7CDD  8B CE					mov cx, si ; cx = R3, si = R2
+						;or cx, 0FE00h ; set bits 9...15 of file offset in R3
+						; 04/04/2022
+ 7CDF  80 CD FE					or ch, 0FEh
+ 7CE2  81 E6 01FF				and si, 1FFh ; calculate file offset mod 512
+ 7CE6  03 F3					add si, bx ; offset Buffer ; si now points to 1st byte in buffer
+						   	  ; where data is to be placed
+ 7CE8  8B 3E 7DBD R				mov di, word ptr [b_base] ; R1
+ 7CEC  F7 D9					neg cx ; 512 - file offset(mod512) in R3 (cx)
+ 7CEE  3B 0E 7DC1 R				cmp cx, word ptr [b_count]
+ 7CF2  76 04					jna short @f ; 2f
+
+ 7CF4  8B 0E 7DC1 R				mov cx, word ptr [b_count]
+ 7CF8				@@:
+ 7CF8  01 0E 7DC3 R				add word ptr [b_nread], cx ; r3 + number of bytes
+							; xmitted during write is put into
+							; u_nread
+ 7CFC  29 0E 7DC1 R				sub word ptr [b_count], cx
+ 7D00  01 0E 7DBD R				add word ptr [b_base], cx ; points to 1st of remaining
+							; data bytes
+ 7D04  01 0E 7DBF R				add word ptr [b_off], cx ; new file offset = number 
+							; of bytes done + old file offset
+				; end of readi_sioreg
+						; DI = file (user data) offset
+						; SI = sector (I/O) buffer offset
+						; CX = byte count 
+						
+ 7D08  F3/ A4					rep movsb
+						;;pop ax
+
+ 7D0A  83 3E 7DC1 R 00				cmp word ptr [b_count], 0
+						;ja read_i_1
+						; 04/04/2022
+ 7D0F  76 06					jna short read_i_retn
+ 7D11  BB 0604					mov bx, inode_size ; 04/04/2022
+ 7D14  E9 FF71					jmp read_i_1
+
+ 7D17				read_i_retn: ;; 22/12/2013
+						;;retn
+
+				;;read_i_3:       
+					    ;;	pop ax ; i-number
+
+				;;read_i_retn:
+					    ;;	retn 
+
+					     ;;; jc short load_bf_retn	
+
+						; 04/04/2022
+ 7D17  8B 0E 7DC3 R				mov cx, word ptr [b_nread]
+ 7D1B  BB 0604					mov bx, inode_size
+						
+					     ;;	cmp cx, word ptr [bx]
+					     ;; retn
+
+				;;load_bf_stc:
+					     ;;	stc
+
+				;;load_bf_retn:
+					     ;;	retn
+				      
+				             ;;; jc short loc_unix_bl_error
+
+
+ 7D1E				loc_launch_bootfile:
+ 7D1E  BE 7D9C R				mov si, offset msg_CRLF
+ 7D21  E8 0052					call print_string
+
+						; 09/01/2020 - Segment BUGFIX (ds=cs)
+ 7D24  8A 16 7C0C R				mov dl, byte ptr [bsDriveNumber]
+					       
+ 7D28  B8 07E0					mov ax, boot_file_segment ; 7E0h 
+ 7D2B  8E D8					mov ds, ax
+ 7D2D  8E C0					mov es, ax
+ 7D2F  FA					cli
+ 7D30  8E D0					mov ss, ax
+						;mov sp, 0FFFEh 
+ 7D32  FB					sti
+
+						; 09/01/2020 - Segment BUG (on 21/04/2014 source code)
+						;mov dl, byte ptr [bsDriveNumber]
+
+					     ; MASM.EXE don't accept
+					     ; jmp 07E0h:0000h
+					     ; for OP Code: EA0000E007
+ 7D33  EA					db 0EAh
+ 7D34  0000					dw 0
+ 7D36  07E0					dw 07E0h 
+						  
+ 7D38  EB FE			NeverComeHere:  jmp short NeverComeHere 
+
+ 7D3A				loc_no_bootable_disk:
+ 7D3A  BE 7D9F R				mov si, offset msg_press_any_key
+ 7D3D  E8 0036					call print_string
+ 7D40  33 C0					xor ax, ax
+ 7D42  CD 16					int 16h
+ 7D44  CD 19					int 19h
+
+ 7D46				loc_unix_bl_error:
+ 7D46  BE 7D85 R				mov si, offset unix_bfl_error_msg
+ 7D49  E8 002A					call print_string
+ 7D4C  EB EA					jmp short NeverComeHere
+
+ 7D4E				unixbootsector	endp
+
+
+ 7D4E				dsk_rd		proc near
+						;; 22/12/2013
+						; 28/10/2012 (bf_buff_s)
+						; 20/10/2012
+						; 14/10/2012
+						; fd boot sector version of "dskrd" procedure
+						; Derived from (original) UNIX v1 source code
+						; PRELIMINARY release of Unix Implementation Document, 
+						; 20/6/1972
+						; RETRO UNIX v1 FS
+						; floppy disk boot sector version
+						;; return => if cf=1 error number in [Error]
+
+						; ax = sector/block number
+
+					 	;cmp ax, word ptr [bf_buff_s] ; buffer sector
+					 	;je short dsk_rd_3
+
+					 	;;mov si, ax
+
+ 7D4E  BB 0700					mov bx, BF_BUFFER ; offset Buffer
+
+ 7D51  32 ED				 	xor ch, ch
+ 7D53  B1 04				 	mov cl, 4 ; Retry count
+ 7D55				dsk_rd_1:
+ 7D55  51				 	push cx
+ 7D56  BA 0012				 	mov dx, 18           ; Sectors per track, 18
+ 7D59  F6 F2				 	div dl                      
+ 7D5B  8A CC				 	mov cl, ah           ; Sector (zero based)
+ 7D5D  FE C1				 	inc cl               ; To make it 1 based
+ 7D5F  D0 E8				 	shr al, 1            ; Convert Track to Cylinder
+ 7D61  80 D6 00				 	adc dh, 0            ; Heads (0 or 1)
+
+ 7D64  8A 16 7C0C R			 	mov dl, byte ptr [bsDriveNumber] ; Physical drive number 
+ 7D68  8A E8				 	mov ch, al
+
+ 7D6A  B4 02				 	mov ah, 2            ; 2=read         
+ 7D6C  B0 01				 	mov al, 01h
+ 7D6E  CD 13				 	int 13h              ; BIOS Service func ( ah ) = 2
+								     ; Read disk sectors
+								     ; BIOS Service func ( ah ) = 3
+								     ; Write disk sectors
+								     ;AL-sec num CH-cyl CL-sec
+								     ; DH-head DL-drive ES:BX-buffer
+								     ;CF-flag AH-stat AL-sec read
+ 7D70  59				 	pop cx
+ 7D71  73 02				 	jnc short dsk_rd_2
+ 7D73  E2 E0				 	loop dsk_rd_1
+ 7D75				dsk_rd_2:
+						;mov word ptr [bf_buff_s], si 
+ 7D75				dsk_rd_3:
+ 7D75  C3				 	retn
+
+ 7D76				dsk_rd		endp
+
+
+ 7D76				print_string	proc near
+
+ 7D76  BB 0007					mov BX, 07h
+ 7D79  B4 0E					mov AH, 0Eh 
+ 7D7B				loc_print:
+ 7D7B  AC					lodsb                ; Load byte at DS:SI to AL
+ 7D7C  22 C0					and AL,AL            
+ 7D7E  74 04					je short loc_return ; If AL = 00h then return
+					      
+ 7D80  CD 10					int 10h              ; BIOS Service func ( ah ) = 0Eh
+								     ; Write char as TTY
+								     ;AL-char BH-page BL-color
+ 7D82  EB F7					jmp short loc_print           
+ 7D84				loc_return:
+ 7D84  C3					retn
+
+ 7D85				print_string	endp
+
+
+ 7D85				unix_bfl_error_msg:
+						;db 07h, "UNIX boot error!"
+ 7D85  07 52 65 74 72 6F			db 07h, "Retro UNIX boot error!"
+       20 55 4E 49 58 20
+       62 6F 6F 74 20 65
+       72 72 6F 72 21
+ 7D9C				msg_CRLF:
+ 7D9C  0D 0A 00					db 0Dh, 0Ah, 0
+
+ 7D9F				msg_press_any_key:
+ 7D9F  07					db 07h
+ 7DA0  4E 6F 74 20 61 20			db "Not a bootable floppy disk!"
+       62 6F 6F 74 61 62
+       6C 65 20 66 6C 6F
+       70 70 79 20 64 69
+       73 6B 21
+ 7DBB  0D 0A					db 0Dh,0Ah
+ 7DBD 0000			b_base:  dw 0
+ 7DBF 0000			b_off:   dw 0
+ 7DC1 0000			b_count: dw 0
+ 7DC3 0000			b_nread: dw 0
+
+				;bf_buff_s: dw 0
+
+				;;i_i:		db 2 dup (0)
+
+						org 7DFEh
+
+ 7DFE AA55			bsBootSign:     dw 0AA55h
+
+ 7E00				RUFS_BS		ends
+
+						end START
+Microsoft (R) Macro Assembler Version 6.14.8444		    04/04/22 19:47:29
+rufsbs1.asm						     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+RUFS_BS  . . . . . . . . . . . .	16 Bit	 7E00	  Para	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+dsk_rd . . . . . . . . . . . . .	P Near	 7D4E	  RUFS_BS	Length= 0028 Private
+print_string . . . . . . . . . .	P Near	 7D76	  RUFS_BS	Length= 000F Private
+unixbootsector . . . . . . . . .	P Near	 7C00	  RUFS_BS	Length= 014E Private
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+BF_BUFFER  . . . . . . . . . . .	Number	 0700h	 
+BF_INODE . . . . . . . . . . . .	Number	 0600h	 
+NeverComeHere  . . . . . . . . .	L Near	 7D38	  RUFS_BS	
+START  . . . . . . . . . . . . .	L Near	 7C00	  RUFS_BS	
+b_base . . . . . . . . . . . . .	L Near	 7DBD	  RUFS_BS	
+b_count  . . . . . . . . . . . .	L Near	 7DC1	  RUFS_BS	
+b_nread  . . . . . . . . . . . .	L Near	 7DC3	  RUFS_BS	
+b_off  . . . . . . . . . . . . .	L Near	 7DBF	  RUFS_BS	
+boot_file_load_address . . . . .	Number	 7E00h	 
+boot_file_segment  . . . . . . .	Number	 07E0h	 
+bsBootSign . . . . . . . . . . .	L Near	 7DFE	  RUFS_BS	
+bsDriveNumber  . . . . . . . . .	L Near	 7C0C	  RUFS_BS	
+bsFSystemID  . . . . . . . . . .	L Near	 7C02	  RUFS_BS	
+bsHeads  . . . . . . . . . . . .	L Near	 7C0F	  RUFS_BS	
+bsReserved . . . . . . . . . . .	L Near	 7C0D	  RUFS_BS	
+bsSecPerTrack  . . . . . . . . .	L Near	 7C0E	  RUFS_BS	
+bsTracks . . . . . . . . . . . .	L Near	 7C10	  RUFS_BS	
+bsVolumeSerial . . . . . . . . .	L Near	 7C06	  RUFS_BS	
+bs_BF_I_number . . . . . . . . .	L Near	 7C12	  RUFS_BS	
+dsk_rd_1 . . . . . . . . . . . .	L Near	 7D55	  RUFS_BS	
+dsk_rd_2 . . . . . . . . . . . .	L Near	 7D75	  RUFS_BS	
+dsk_rd_3 . . . . . . . . . . . .	L Near	 7D75	  RUFS_BS	
+i_get_1  . . . . . . . . . . . .	L Near	 7C45	  RUFS_BS	
+i_get_2  . . . . . . . . . . . .	L Near	 7C5C	  RUFS_BS	
+i_get  . . . . . . . . . . . . .	L Near	 7C30	  RUFS_BS	
+inode_ctim . . . . . . . . . . .	Number	 0616h	 
+inode_dskp . . . . . . . . . . .	Number	 0606h	 
+inode_flgs . . . . . . . . . . .	Number	 0600h	 
+inode_mtim . . . . . . . . . . .	Number	 061Ah	 
+inode_nlks . . . . . . . . . . .	Number	 0602h	 
+inode_reserved . . . . . . . . .	Number	 061Eh	 
+inode_size . . . . . . . . . . .	Number	 0604h	 
+inode_uid  . . . . . . . . . . .	Number	 0603h	 
+lbf_2  . . . . . . . . . . . . .	L Near	 7C5E	  RUFS_BS	
+load_bf_1  . . . . . . . . . . .	L Near	 7C30	  RUFS_BS	
+load_boot_file . . . . . . . . .	L Near	 7C30	  RUFS_BS	
+loc_launch_bootfile  . . . . . .	L Near	 7D1E	  RUFS_BS	
+loc_no_bootable_disk . . . . . .	L Near	 7D3A	  RUFS_BS	
+loc_print  . . . . . . . . . . .	L Near	 7D7B	  RUFS_BS	
+loc_return . . . . . . . . . . .	L Near	 7D84	  RUFS_BS	
+loc_unix_bl_error  . . . . . . .	L Near	 7D46	  RUFS_BS	
+m_get_0  . . . . . . . . . . . .	L Near	 7C9D	  RUFS_BS	
+m_get_1  . . . . . . . . . . . .	L Near	 7CB9	  RUFS_BS	
+m_get_2  . . . . . . . . . . . .	L Near	 7CC7	  RUFS_BS	
+m_get_3  . . . . . . . . . . . .	L Near	 7CD0	  RUFS_BS	
+m_get_4  . . . . . . . . . . . .	L Near	 7CD4	  RUFS_BS	
+m_get_5  . . . . . . . . . . . .	L Near	 7CD4	  RUFS_BS	
+m_get  . . . . . . . . . . . . .	L Near	 7C9D	  RUFS_BS	
+msg_CRLF . . . . . . . . . . . .	L Near	 7D9C	  RUFS_BS	
+msg_press_any_key  . . . . . . .	L Near	 7D9F	  RUFS_BS	
+read_i_1 . . . . . . . . . . . .	L Near	 7C88	  RUFS_BS	
+read_i_2 . . . . . . . . . . . .	L Near	 7C9D	  RUFS_BS	
+read_i_retn  . . . . . . . . . .	L Near	 7D17	  RUFS_BS	
+read_i . . . . . . . . . . . . .	L Near	 7C84	  RUFS_BS	
+readi_sioreg . . . . . . . . . .	L Near	 7CD9	  RUFS_BS	
+unix_bfl_error_msg . . . . . . .	L Near	 7D85	  RUFS_BS	
+
+	   0 Warnings
+	   0 Errors
