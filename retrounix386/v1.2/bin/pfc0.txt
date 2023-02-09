@@ -1,0 +1,256 @@
+     1                                  ; ****************************************************************************
+     2                                  ; pfc.s (Retro Unix 386 v1.2) - get page fault count -Erdogan Tan- 27/12/2022
+     3                                  ; ----------------------------------------------------------------------------
+     4                                  ; [ Last Modification: 27/12/2022 ]
+     5                                  
+     6                                  ; ****************************************************************************
+     7                                  ; Assembler: NASM v2.15
+     8                                  ; ((nasm pfc0.s -l pfc0.txt -o pfc0 -Z error.txt))
+     9                                  
+    10                                  ; 27/12/2022 (40)
+    11                                  ; 12/01/2022 (37,38,39)
+    12                                  ; 21/09/2015 (36) 
+    13                                  ; 01/07/2015 (35)
+    14                                  ; 14/07/2013 (0-34)
+    15                                  ; UNIX v1 system calls
+    16                                  _rele 	equ 0
+    17                                  _exit 	equ 1
+    18                                  _fork 	equ 2
+    19                                  _read 	equ 3
+    20                                  _write	equ 4
+    21                                  _open	equ 5
+    22                                  _close 	equ 6
+    23                                  _wait 	equ 7
+    24                                  _creat 	equ 8
+    25                                  _link 	equ 9
+    26                                  _unlink	equ 10
+    27                                  _exec	equ 11
+    28                                  _chdir	equ 12
+    29                                  _time 	equ 13
+    30                                  _mkdir 	equ 14
+    31                                  _chmod	equ 15
+    32                                  _chown	equ 16
+    33                                  _break	equ 17
+    34                                  _stat	equ 18
+    35                                  _seek	equ 19
+    36                                  _tell 	equ 20
+    37                                  _mount	equ 21
+    38                                  _umount	equ 22
+    39                                  _setuid	equ 23
+    40                                  _getuid	equ 24
+    41                                  _stime	equ 25
+    42                                  _quit	equ 26	
+    43                                  _intr	equ 27
+    44                                  _fstat	equ 28
+    45                                  _emt 	equ 29
+    46                                  _mdate 	equ 30
+    47                                  _stty 	equ 31
+    48                                  _gtty	equ 32
+    49                                  _ilgins	equ 33
+    50                                  _sleep	equ 34 ; Retro UNIX 8086 v1 feature only !
+    51                                  _msg	equ 35 ; Retro UNIX 386 v1 feature only !
+    52                                  _geterr	equ 36 ; Retro UNIX 386 v1 feature only !
+    53                                  ; 12/01/2022 - Retro UNIX 386 v1.2
+    54                                  ; Retro UNIX 386 v2 system calls
+    55                                  _setgid	equ 37
+    56                                  _getgid	equ 38
+    57                                  _ver	equ 39 ; (get) Retro Unix 386 version
+    58                                  ; 27/12/2022 - Retro UNIX 386 v1.2
+    59                                  _mem	equ 40 ; get available memory
+    60                                  
+    61                                  %macro sys 1-4
+    62                                      ; 03/09/2015
+    63                                      ; 13/04/2015
+    64                                      ; Retro UNIX 386 v1 system call.
+    65                                      %if %0 >= 2   
+    66                                          mov ebx, %2
+    67                                          %if %0 >= 3
+    68                                              mov ecx, %3
+    69                                              %if %0 = 4
+    70                                                 mov edx, %4
+    71                                              %endif
+    72                                          %endif
+    73                                      %endif
+    74                                      mov eax, %1
+    75                                      int 30h
+    76                                  %endmacro
+    77                                  
+    78                                  ; 17/06/2022 - Retro UNIX 386 v1
+    79                                  ;struc stat
+    80                                  ;	; Retro UNIX v1 'sysstat' output !
+    81                                  ;	; (34 bytes)
+    82                                  ;	.inode:  resw 1	
+    83                                  ;	.mode:	 resw 1
+    84                                  ;	.nlinks: resb 1
+    85                                  ;	.uid:	 resb 1
+    86                                  ;	.size:	 resw 1
+    87                                  ;	.dskptr: resw 8
+    88                                  ;	.ctime:	 resd 1
+    89                                  ;	.mtime:	 resd 1
+    90                                  ;	.rsvd:   resw 1
+    91                                  ;	.strucsize:
+    92                                  ;endstruc 
+    93                                  
+    94                                  ENTERKEY  equ 0Dh
+    95                                  NEXTLINE  equ 0Ah
+    96                                  BACKSPACE equ 08h 
+    97                                  
+    98                                  ; Retro UNIX 386 v1 system call format:
+    99                                  ; sys systemcall (eax) <arg1 (ebx)>, <arg2 (ecx)>, <arg3 (edx)>
+   100                                  
+   101                                  ; --------------------------------------------------------------
+   102                                  
+   103                                  [BITS 32] ; We need 32-bit intructions for protected mode
+   104                                  
+   105                                  [ORG 0] 
+   106                                  
+   107                                  START_CODE:
+   108                                  	; 27/12/2022
+   109                                  	; get my (current process's) page faults count
+   110 00000000 31DB                    	xor 	ebx, ebx ; 0
+   111 00000002 4B                      	dec	ebx ; -1
+   112                                  	sys	_geterr
+   113                              <1> 
+   114                              <1> 
+   115                              <1> 
+   116                              <1>  %if %0 >= 2
+   117                              <1>  mov ebx, %2
+   118                              <1>  %if %0 >= 3
+   119                              <1>  mov ecx, %3
+   120                              <1>  %if %0 = 4
+   121                              <1>  mov edx, %4
+   122                              <1>  %endif
+   123                              <1>  %endif
+   124                              <1>  %endif
+   125 00000003 B824000000          <1>  mov eax, %1
+   126 00000008 CD30                <1>  int 30h
+   127 0000000A A3[E4000000]            	mov	[my_pfc], eax
+   128                                  	; get total page faults count
+   129 0000000F 4B                      	dec	ebx ; -2
+   130                                  	sys	_geterr
+   131                              <1> 
+   132                              <1> 
+   133                              <1> 
+   134                              <1>  %if %0 >= 2
+   135                              <1>  mov ebx, %2
+   136                              <1>  %if %0 >= 3
+   137                              <1>  mov ecx, %3
+   138                              <1>  %if %0 = 4
+   139                              <1>  mov edx, %4
+   140                              <1>  %endif
+   141                              <1>  %endif
+   142                              <1>  %endif
+   143 00000010 B824000000          <1>  mov eax, %1
+   144 00000015 CD30                <1>  int 30h
+   145 00000017 A3[E0000000]            	mov	[total_pfc], eax
+   146                                  
+   147 0000001C E820000000              	call	page_fault_info
+   148                                  
+   149                                  	sys	_write, 1, msg_pfc_info, size_of_pfcinfo
+   150                              <1> 
+   151                              <1> 
+   152                              <1> 
+   153                              <1>  %if %0 >= 2
+   154 00000021 BB01000000          <1>  mov ebx, %2
+   155                              <1>  %if %0 >= 3
+   156 00000026 B9[7D000000]        <1>  mov ecx, %3
+   157                              <1>  %if %0 = 4
+   158 0000002B BA60000000          <1>  mov edx, %4
+   159                              <1>  %endif
+   160                              <1>  %endif
+   161                              <1>  %endif
+   162 00000030 B804000000          <1>  mov eax, %1
+   163 00000035 CD30                <1>  int 30h
+   164                                  
+   165                                  	sys	_exit
+   166                              <1> 
+   167                              <1> 
+   168                              <1> 
+   169                              <1>  %if %0 >= 2
+   170                              <1>  mov ebx, %2
+   171                              <1>  %if %0 >= 3
+   172                              <1>  mov ecx, %3
+   173                              <1>  %if %0 = 4
+   174                              <1>  mov edx, %4
+   175                              <1>  %endif
+   176                              <1>  %endif
+   177                              <1>  %endif
+   178 00000037 B801000000          <1>  mov eax, %1
+   179 0000003C CD30                <1>  int 30h
+   180                                  here:
+   181 0000003E 90                      	nop
+   182 0000003F EBFD                    	jmp	short here
+   183                                  
+   184                                  ; --------------------------------------------------------------
+   185                                  
+   186                                  page_fault_info:	
+   187 00000041 A1[E0000000]            	mov	eax, [total_pfc]
+   188 00000046 BB0A000000              	mov	ebx, 10
+   189 0000004B B107                    	mov	cl, 7
+   190 0000004D BE[B1000000]            	mov	esi, total_pfc_str	
+   191 00000052 E809000000              	call	bintdstr
+   192 00000057 B107                    	mov	cl, 7
+   193 00000059 BE[D1000000]            	mov	esi, my_pfc_str
+   194 0000005E EB00                    	jmp	short bintdstr
+   195                                  
+   196                                  bintdstr:
+   197                                  	; EAX = binary number
+   198                                  	; ESI = decimal/numeric string address
+   199                                  	; EBX = divisor (10)
+   200                                  	; ECX = string length (<=10)
+   201 00000060 01CE                    	add	esi, ecx
+   202                                  btdstr0:
+   203 00000062 4E                      	dec	esi
+   204 00000063 31D2                    	xor	edx, edx
+   205 00000065 F7F3                    	div	ebx
+   206 00000067 80C230                  	add	dl, 30h
+   207 0000006A 8816                    	mov	[esi], dl
+   208 0000006C FEC9                    	dec	cl
+   209 0000006E 740C                    	jz	short btdstr2
+   210 00000070 09C0                    	or	eax, eax
+   211 00000072 75EE                    	jnz	short btdstr0
+   212                                  btdstr1:
+   213 00000074 4E                      	dec	esi
+   214 00000075 C60620                          mov     byte [esi], 20h ; blank space
+   215 00000078 FEC9                    	dec	cl
+   216 0000007A 75F8                    	jnz	short btdstr1
+   217                                  btdstr2:
+   218 0000007C C3                      	retn
+   219                                  
+   220                                  msg_pfc_info:
+   221                                  	;db	07h
+   222 0000007D 0D0A                    	db	0Dh, 0Ah
+   223 0000007F 0D0A                    	db	0Dh, 0Ah
+   224 00000081 4D454D4F5259205041-     	db 	"MEMORY PAGE FAULT COUNTS", 0Dh, 0Ah, 0Dh, 0Ah
+   225 0000008A 4745204641554C5420-
+   226 00000093 434F554E54530D0A0D-
+   227 0000009C 0A                 
+   228 0000009D 546F74616C20706167-     	db	"Total page faults : "
+   229 000000A6 65206661756C747320-
+   230 000000AF 3A20               
+   231                                  total_pfc_str:	; 7 digits
+   232 000000B1 30303030303030200D-     	db	"0000000 ", 0Dh, 0Ah
+   233 000000BA 0A                 
+   234 000000BB 0D0A                    	db 	0Dh, 0Ah
+   235 000000BD 4D7920706167652066-     	db	"My page faults    : "
+   236 000000C6 61756C747320202020-
+   237 000000CF 3A20               
+   238                                  my_pfc_str:	; 7 digits
+   239 000000D1 3F3F3F3F3F3F3F200D-     	db	"??????? ", 0Dh, 0Ah
+   240 000000DA 0A                 
+   241 000000DB 0D0A00                  	db	0Dh, 0Ah, 0
+   242                                  
+   243                                  size_of_pfcinfo equ ($ - msg_pfc_info) - 1
+   244                                  
+   245                                  ; --------------------------------------------------------------
+   246                                  
+   247 000000DE 90<rept>                align 4
+   248                                  
+   249                                  bss_start:
+   250                                  
+   251                                  ABSOLUTE bss_start
+   252                                  
+   253 000000E0 <res 00000004>          total_pfc: resd 1
+   254 000000E4 <res 00000004>          my_pfc:	resd 1
+   255                                  
+   256                                  ; --------------------------------------------------------------

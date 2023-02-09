@@ -1,0 +1,4 @@
+root::0::/:
+daemon::1::/bin:
+bin::3::/bin:
+erdogan:5y54mV6H:4::/erdogan:

@@ -1,0 +1,331 @@
+     1                                  ; ****************************************************************************
+     2                                  ; mem.s (Retro Unix 386 v1.2) - get & print available memory - 27/12/2022
+     3                                  ; ----------------------------------------------------------------------------
+     4                                  ; [ Last Modification: 27/12/2022 ] - Erdogan Tan -
+     5                                  
+     6                                  ; ****************************************************************************
+     7                                  ; Assembler: NASM v2.15
+     8                                  ; ((nasm mem0.s -l mem0.txt -o mem0 -Z error.txt))
+     9                                  
+    10                                  ; 27/12/2022 (40)
+    11                                  ; 12/01/2022 (37,38,39)
+    12                                  ; 21/09/2015 (36) 
+    13                                  ; 01/07/2015 (35)
+    14                                  ; 14/07/2013 (0-34)
+    15                                  ; UNIX v1 system calls
+    16                                  _rele 	equ 0
+    17                                  _exit 	equ 1
+    18                                  _fork 	equ 2
+    19                                  _read 	equ 3
+    20                                  _write	equ 4
+    21                                  _open	equ 5
+    22                                  _close 	equ 6
+    23                                  _wait 	equ 7
+    24                                  _creat 	equ 8
+    25                                  _link 	equ 9
+    26                                  _unlink	equ 10
+    27                                  _exec	equ 11
+    28                                  _chdir	equ 12
+    29                                  _time 	equ 13
+    30                                  _mkdir 	equ 14
+    31                                  _chmod	equ 15
+    32                                  _chown	equ 16
+    33                                  _break	equ 17
+    34                                  _stat	equ 18
+    35                                  _seek	equ 19
+    36                                  _tell 	equ 20
+    37                                  _mount	equ 21
+    38                                  _umount	equ 22
+    39                                  _setuid	equ 23
+    40                                  _getuid	equ 24
+    41                                  _stime	equ 25
+    42                                  _quit	equ 26	
+    43                                  _intr	equ 27
+    44                                  _fstat	equ 28
+    45                                  _emt 	equ 29
+    46                                  _mdate 	equ 30
+    47                                  _stty 	equ 31
+    48                                  _gtty	equ 32
+    49                                  _ilgins	equ 33
+    50                                  _sleep	equ 34 ; Retro UNIX 8086 v1 feature only !
+    51                                  _msg	equ 35 ; Retro UNIX 386 v1 feature only !
+    52                                  _geterr	equ 36 ; Retro UNIX 386 v1 feature only !
+    53                                  ; 12/01/2022 - Retro UNIX 386 v1.2
+    54                                  ; Retro UNIX 386 v2 system calls
+    55                                  _setgid	equ 37
+    56                                  _getgid	equ 38
+    57                                  _ver	equ 39 ; (get) Retro Unix 386 version
+    58                                  ; 27/12/2022 - Retro UNIX 386 v1.2
+    59                                  _mem	equ 40 ; get available memory
+    60                                  
+    61                                  %macro sys 1-4
+    62                                      ; 03/09/2015
+    63                                      ; 13/04/2015
+    64                                      ; Retro UNIX 386 v1 system call.
+    65                                      %if %0 >= 2   
+    66                                          mov ebx, %2
+    67                                          %if %0 >= 3
+    68                                              mov ecx, %3
+    69                                              %if %0 = 4
+    70                                                 mov edx, %4
+    71                                              %endif
+    72                                          %endif
+    73                                      %endif
+    74                                      mov eax, %1
+    75                                      int 30h
+    76                                  %endmacro
+    77                                  
+    78                                  ; 17/06/2022 - Retro UNIX 386 v1
+    79                                  ;struc stat
+    80                                  ;	; Retro UNIX v1 'sysstat' output !
+    81                                  ;	; (34 bytes)
+    82                                  ;	.inode:  resw 1	
+    83                                  ;	.mode:	 resw 1
+    84                                  ;	.nlinks: resb 1
+    85                                  ;	.uid:	 resb 1
+    86                                  ;	.size:	 resw 1
+    87                                  ;	.dskptr: resw 8
+    88                                  ;	.ctime:	 resd 1
+    89                                  ;	.mtime:	 resd 1
+    90                                  ;	.rsvd:   resw 1
+    91                                  ;	.strucsize:
+    92                                  ;endstruc 
+    93                                  
+    94                                  ENTERKEY  equ 0Dh
+    95                                  NEXTLINE  equ 0Ah
+    96                                  BACKSPACE equ 08h 
+    97                                  
+    98                                  ; Retro UNIX 386 v1 system call format:
+    99                                  ; sys systemcall (eax) <arg1 (ebx)>, <arg2 (ecx)>, <arg3 (edx)>
+   100                                  
+   101                                  ; --------------------------------------------------------------
+   102                                  
+   103                                  [BITS 32] ; We need 32-bit intructions for protected mode
+   104                                  
+   105                                  [ORG 0] 
+   106                                  
+   107                                  START_CODE:
+   108                                  	; 27/12/2022
+   109                                  	; get total memory in pages
+   110 00000000 31DB                    	xor 	ebx, ebx ; 0
+   111                                  	sys	_mem
+   112                              <1> 
+   113                              <1> 
+   114                              <1> 
+   115                              <1>  %if %0 >= 2
+   116                              <1>  mov ebx, %2
+   117                              <1>  %if %0 >= 3
+   118                              <1>  mov ecx, %3
+   119                              <1>  %if %0 = 4
+   120                              <1>  mov edx, %4
+   121                              <1>  %endif
+   122                              <1>  %endif
+   123                              <1>  %endif
+   124 00000002 B828000000          <1>  mov eax, %1
+   125 00000007 CD30                <1>  int 30h
+   126 00000009 A3[30010000]            	mov	[memory_size], eax
+   127                                  	; get free memory in pages
+   128 0000000E 43                      	inc	ebx ; 1
+   129                                  	sys	_mem
+   130                              <1> 
+   131                              <1> 
+   132                              <1> 
+   133                              <1>  %if %0 >= 2
+   134                              <1>  mov ebx, %2
+   135                              <1>  %if %0 >= 3
+   136                              <1>  mov ecx, %3
+   137                              <1>  %if %0 = 4
+   138                              <1>  mov edx, %4
+   139                              <1>  %endif
+   140                              <1>  %endif
+   141                              <1>  %endif
+   142 0000000F B828000000          <1>  mov eax, %1
+   143 00000014 CD30                <1>  int 30h
+   144 00000016 A3[34010000]            	mov	[free_pages], eax
+   145                                  
+   146 0000001B E820000000              	call	memory_info
+   147                                  
+   148                                  	sys	_write, 1, msg_memory_info, size_of_meminfo
+   149                              <1> 
+   150                              <1> 
+   151                              <1> 
+   152                              <1>  %if %0 >= 2
+   153 00000020 BB01000000          <1>  mov ebx, %2
+   154                              <1>  %if %0 >= 3
+   155 00000025 B9[A1000000]        <1>  mov ecx, %3
+   156                              <1>  %if %0 = 4
+   157 0000002A BA8C000000          <1>  mov edx, %4
+   158                              <1>  %endif
+   159                              <1>  %endif
+   160                              <1>  %endif
+   161 0000002F B804000000          <1>  mov eax, %1
+   162 00000034 CD30                <1>  int 30h
+   163                                  
+   164                                  	sys	_exit
+   165                              <1> 
+   166                              <1> 
+   167                              <1> 
+   168                              <1>  %if %0 >= 2
+   169                              <1>  mov ebx, %2
+   170                              <1>  %if %0 >= 3
+   171                              <1>  mov ecx, %3
+   172                              <1>  %if %0 = 4
+   173                              <1>  mov edx, %4
+   174                              <1>  %endif
+   175                              <1>  %endif
+   176                              <1>  %endif
+   177 00000036 B801000000          <1>  mov eax, %1
+   178 0000003B CD30                <1>  int 30h
+   179                                  here:
+   180 0000003D 90                      	nop
+   181 0000003E EBFD                    	jmp	short here
+   182                                  
+   183                                  ; --------------------------------------------------------------
+   184                                  
+   185                                  ; (unix386.s)
+   186                                  ; Write memory information
+   187                                  ; Temporary Code
+   188                                  ; 06/11/2014
+   189                                  ; 14/08/2015 
+   190                                  
+   191                                  memory_info:	
+   192 00000040 A1[30010000]            	mov	eax, [memory_size] ; in pages
+   193 00000045 50                      	push	eax
+   194 00000046 C1E00C                  	shl	eax, 12		   ; in bytes
+   195                                  	;mov	ebx, 10
+   196                                  	; 27/12/2022
+   197 00000049 B30A                    	mov	bl, 10
+   198 0000004B 89D9                    	mov	ecx, ebx	   ; 10
+   199 0000004D BE[B4000000]            	mov	esi, mem_total_b_str	
+   200 00000052 E82C000000              	call	bintdstr
+   201 00000057 58                      	pop	eax
+   202 00000058 B107                    	mov	cl, 7
+   203 0000005A BE[D8000000]            	mov	esi, mem_total_p_str
+   204 0000005F E81F000000              	call	bintdstr	
+   205                                  	; 27/12/2022 (mem0.s)
+   206                                  	; 14/08/2015
+   207                                  	;call	calc_free_mem
+   208                                  	;; edx = calculated free pages
+   209                                  	;; ecx = 0
+   210 00000064 A1[34010000]            	mov 	eax, [free_pages]
+   211                                  	;cmp	eax, edx ; calculated free mem value 
+   212                                  	;	; and initial free mem value are same or not?
+   213                                  	;jne 	short pmim ; print mem info with '?' if not
+   214                                  	;push 	edx ; free memory in pages	
+   215                                  	;;mov 	eax, edx
+   216 00000069 50                      	push	eax
+   217 0000006A C1E00C                  	shl	eax, 12 ; convert page count
+   218                                  			; to byte count
+   219 0000006D B10A                    	mov	cl, 10
+   220 0000006F BE[F8000000]            	mov	esi, free_mem_b_str
+   221 00000074 E80A000000              	call	bintdstr
+   222 00000079 58                      	pop	eax
+   223 0000007A B107                    	mov	cl, 7
+   224 0000007C BE[1C010000]            	mov	esi, free_mem_p_str
+   225                                  	;call	bintdstr
+   226                                  	; 27/12/2022
+   227                                  	;retn
+   228 00000081 EB00                    	jmp	short bintdstr
+   229                                  
+   230                                  ; 27/12/2022
+   231                                  %if 0
+   232                                  
+   233                                  pmim:
+   234                                  	mov	esi, msg_memory_info
+   235                                  pmim_nb:	
+   236                                  	lodsb
+   237                                  	or	al, al
+   238                                  	jz	short pmim_ok
+   239                                  	push	esi
+   240                                  	xor	ebx, ebx ; 0
+   241                                  			; Video page 0 (bl=0)
+   242                                  	mov	ah, 07h ; Black background, 
+   243                                  			; light gray forecolor
+   244                                  	call	write_tty
+   245                                  	pop	esi
+   246                                  	jmp	short pmim_nb
+   247                                  pmim_ok:
+   248                                  	retn
+   249                                  
+   250                                  %endif
+   251                                  
+   252                                  ; Convert binary number to decimal/numeric string
+   253                                  ; 06/11/2014
+   254                                  ; Temporary Code
+   255                                  ;
+   256                                  
+   257                                  bintdstr:
+   258                                  	; EAX = binary number
+   259                                  	; ESI = decimal/numeric string address
+   260                                  	; EBX = divisor (10)
+   261                                  	; ECX = string length (<=10)
+   262 00000083 01CE                    	add	esi, ecx
+   263                                  btdstr0:
+   264 00000085 4E                      	dec	esi
+   265 00000086 31D2                    	xor	edx, edx
+   266 00000088 F7F3                    	div	ebx
+   267 0000008A 80C230                  	add	dl, 30h
+   268 0000008D 8816                    	mov	[esi], dl
+   269 0000008F FEC9                    	dec	cl
+   270 00000091 740C                    	jz	short btdstr2 ; 02/01/2022 (short jump)
+   271 00000093 09C0                    	or	eax, eax
+   272 00000095 75EE                    	jnz	short btdstr0
+   273                                  btdstr1:
+   274 00000097 4E                      	dec	esi
+   275 00000098 C60620                          mov     byte [esi], 20h ; blank space
+   276 0000009B FEC9                    	dec	cl
+   277 0000009D 75F8                    	jnz	short btdstr1
+   278                                  btdstr2:
+   279 0000009F C3                      	retn
+   280                                  
+   281                                  	; 27/12/2022
+   282 000000A0 00                      	db 0
+   283                                  
+   284                                  ; (unix386s)
+   285                                  ; 06/11/2014 (Temporary Data)
+   286                                  ; Memory Information message
+   287                                  ; 14/08/2015
+   288                                  msg_memory_info:
+   289                                  	;db	07h ; 27/12/2022
+   290 000000A1 0D0A                    	db	0Dh, 0Ah
+   291                                  	; 27/12/2022
+   292 000000A3 0D0A                    	db	0Dh, 0Ah
+   293                                  	;db 	"MEMORY ALLOCATION INFO", 0Dh, 0Ah, 0Dh, 0Ah
+   294 000000A5 546F74616C206D656D-     	db	"Total memory : "
+   295 000000AE 6F7279203A20       
+   296                                  mem_total_b_str: ; 10 digits
+   297 000000B4 303030303030303030-     	db	"0000000000 bytes", 0Dh, 0Ah
+   298 000000BD 302062797465730D0A 
+   299 000000C6 202020202020202020-     	db	"               ", 20h, 20h, 20h
+   300 000000CF 202020202020202020 
+   301                                  mem_total_p_str: ; 7 digits
+   302 000000D8 303030303030302070-     	db	"0000000 pages", 0Dh, 0Ah
+   303 000000E1 616765730D0A       
+   304 000000E7 0D0A                    	db 	0Dh, 0Ah
+   305 000000E9 46726565206D656D6F-     	db	"Free memory  : "
+   306 000000F2 727920203A20       
+   307                                  free_mem_b_str:  ; 10 digits
+   308 000000F8 3F3F3F3F3F3F3F3F3F-     	db	"?????????? bytes", 0Dh, 0Ah
+   309 00000101 3F2062797465730D0A 
+   310 0000010A 202020202020202020-     	db	"               ", 20h, 20h, 20h
+   311 00000113 202020202020202020 
+   312                                  free_mem_p_str:  ; 7 digits
+   313 0000011C 3F3F3F3F3F3F3F2070-     	db	"??????? pages", 0Dh, 0Ah
+   314 00000125 616765730D0A       
+   315 0000012B 0D0A00                  	db	0Dh, 0Ah, 0
+   316                                  
+   317                                  ; 27/12/2022 (mem0.s)
+   318                                  size_of_meminfo equ ($ - msg_memory_info) - 1
+   319                                  
+   320                                  ; --------------------------------------------------------------
+   321                                  
+   322 0000012E 90<rept>                align 4
+   323                                  
+   324                                  bss_start:
+   325                                  
+   326                                  ABSOLUTE bss_start
+   327                                  
+   328 00000130 <res 00000004>          memory_size: resd 1
+   329 00000134 <res 00000004>          free_pages:  resd 1
+   330                                  
+   331                                  ; --------------------------------------------------------------
