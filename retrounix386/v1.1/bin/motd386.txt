@@ -1,0 +1,6 @@
+
+
+          Welcome to RETRO UNIX 386 v1.1
+                operating system
+                 by Erdogan Tan
+                   30/06/2022
