@@ -2,6 +2,6 @@ Retro UNIX 386 v1.0: Modified from Retro UNIX 8086 v1 (8086/PC port of UNIX v1 f
                      File System: Modified Unix v1 fs (for 1.44 MB floppy disk), UNIX v1 inodes, 8 byte file names, 64KB file size limit
 Retro UNIX 386 v1.1: Modified from Retro UNIX 386 v1.0
                      File System: Modified Unix v1 fs (for 1.44 MB floppy disk), UNIX v1 inodes, 14 byte file names, 64KB file size limit
-Retro UNIX 386 v1.2: Higly modified Retro UNIX 386 v1.1 with new (runix v2) file system
+Retro UNIX 386 v1.2: Highly modified Retro UNIX 386 v1.1 with new (runix v2) file system
                      File System: Modified Unix v7 inode structure with special Retro UNIX (runix) v2 file system, 14 byte file names
                                   (Hard disk boot ability)
