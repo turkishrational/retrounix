@@ -3,3 +3,5 @@ Retro UNIX v1 (8086 port/derivation of Original UNIX v1 for PDP-11) and Retro UN
 
 link: https://www.singlix.com/runix/index.html
 
+www.youtube.com/@erdogantan
+
