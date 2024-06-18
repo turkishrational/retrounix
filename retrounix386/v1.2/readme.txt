@@ -21,7 +21,7 @@ Startup:
 when you see "Type ENTER to start in multi user mode ..." message,
      press ENTER key.. then write login name as "root" at (tty0) login prompt.
      (you can use pseudo TTYs, by using ALT+F1 .. ALT+F8 key combinations)
-     change screen to (pseudo/console) tty1 (via ALT+F2 key) than write login name as "erdogan" and then
+     change screen to (pseudo/console) tty1 (via ALT+F2 key) then write login name as "erdogan" and then
      press ENTER and just after you see password prompt, write password as "417".
     (/etc/motd message will appear and the shell (/bn/sh) will be launched by /etc/init.)
     ((tty8 -> COM1, tty9 -> COM2, terminal emulation program is in A.IMG file -SERIAL6.COM-.
