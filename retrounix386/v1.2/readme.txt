@@ -16,8 +16,10 @@ If the boot disk is /dev/hd0, /dev/fd1 (or /dev/fd0) is mounted as ..
    anotherone can be mounted after the previous is unmounted. Disks must have Retro UNIX v2 fs.
    UNIXCOPY, UNIXFDFS, UNIXHDCP, UNIXHDFS .COM/DOS programs are used to prepare these RUNIX v2 FS disks.)
 
+ ((writing the commands without any arguments will give a usage -a short, how to use- message))
+
 Startup:
-     boot: unix
+     boot: unix  (? is help command of the boot prompt)
 when you see "Type ENTER to start in multi user mode ..." message,
      press ENTER key.. then write login name as "root" at (tty0) login prompt.
      (you can use pseudo TTYs, by using ALT+F1 .. ALT+F8 key combinations)
