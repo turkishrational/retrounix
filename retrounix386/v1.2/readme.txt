@@ -1,4 +1,4 @@
-Retro UNIX 386 v1.2 disk UMOUNT/MOUNTH principle:
+Retro UNIX 386 v1.2 disk UMOUNT/MOUNT principle:
 (fd0, fd1, hd0 must be set in QEMU or VIRTUALBOX or BOCHS)
 
 fd0.img has the /etc/init file which mounts /dev/fd1 into /usr at startup
